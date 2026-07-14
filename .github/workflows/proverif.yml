@@ -1,0 +1,38 @@
+name: proverif
+
+# Engine-free symbolic-analysis lane: runs ProVerif against the COMMITTED
+# extraction snapshot (proofs/proverif/extraction/lib.pvl) plus the vendored
+# support libraries. It does NOT build the hax ProVerif backend, so it stays fast
+# and portable — only a `proverif` binary is needed. Re-extraction (which needs the
+# hax-proverif opam switch) is a manual step: `make proverif-extract`.
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  proverif:
+    name: ProVerif symbolic model (engine-free)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@a81bbbf8298c0fa03ea29cdc473d45769f953675 # v4.1.1
+        with:
+          persist-credentials: false
+
+      - name: Set up OCaml (for ProVerif)
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.3"
+
+      - name: Install ProVerif
+        run: opam install -y proverif
+
+      - name: Verify committed model snapshot (engine-free)
+        run: opam exec -- python3 proofs/proverif/hax.py reconstruct-proverif
+        working-directory: securedrop-protocol/protocol-minimal
+
+      - name: Check ProVerif verdicts against committed EXPECTPV
+        run: opam exec -- make proverif-check
+        working-directory: securedrop-protocol/protocol-minimal

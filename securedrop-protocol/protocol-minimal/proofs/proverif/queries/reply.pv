@@ -1,0 +1,69 @@
+(*****************************************************************)
+(*  reply.pv — journalist -> source reply                         *)
+(*                                                               *)
+(*  The reply direction reuses the SAME extracted                 *)
+(*  `encrypt_decrypt::encrypt`, with the journalist as sender and  *)
+(*  the source (via its reply keys) as recipient. The source's     *)
+(*  reply keys are public (carried in its submission), so the      *)
+(*  reply's secrecy rests on the source's SECRET keys.             *)
+(*                                                               *)
+(*  Properties (mirroring submission.pv, roles swapped):          *)
+(*   2. Reply confidentiality — attacker cannot learn the reply.   *)
+(*      Journalist authentication — if the source accepts reply m   *)
+(*      as from journalist j, the journalist really sent it.        *)
+(*      Sanity — the honest source receives the reply.             *)
+(*****************************************************************)
+
+event JournalistReplied(bitstring, bitstring).     (* pt_bytes, journalist_apke_pk *)
+event SourceReceivedReply(bitstring, bitstring).   (* pt_bytes, recovered journalist_apke_pk *)
+
+free SECRET_REPLY: bitstring [private].
+
+(* 2. Reply confidentiality. *)
+query attacker(SECRET_REPLY).
+
+(* Journalist authentication of the reply (non-injective agreement). *)
+query m: bitstring, j: bitstring;
+    event(SourceReceivedReply(m, j)) ==> event(JournalistReplied(m, j)).
+
+(* Sanity: the honest source receives the reply (non-vacuous). *)
+query m: bitstring, j: bitstring; event(SourceReceivedReply(m, j)).
+
+(* Honest journalist: replies to the source's public view with its long-term
+   reply APKE key. (A journalist's own reply plaintext carries no reply keys, so
+   the other plaintext fields are irrelevant placeholders here.) *)
+let JournalistReply(journalist: bitstring, source_pub: bitstring, ph1: bitstring, ph2: bitstring) =
+    new rng: bitstring;
+    let pt = securedrop_protocol_minimal__ciphertext__Plaintext__Plaintext(
+                 ph1, ph2, SECRET_REPLY) in
+    let pt_bytes = securedrop_protocol_minimal__ciphertext__Impl_1__to_bytes(pt) in
+    event JournalistReplied(pt_bytes,
+        securedrop_protocol_minimal__traits__UserSecret__own_message_auth_pk(journalist));
+    let rust_primitives__hax__Tuple2__Tuple2(rng2, env) =
+        securedrop_protocol_minimal__encrypt_decrypt__encrypt(rng, journalist, pt, source_pub) in
+    out(c, env).
+
+(* Honest source: runs the FULL extracted receive (`decrypt` = `decrypt_with_sender`)
+   — recovers the journalist's reply APKE key from the metadata, then SD-APKE.AuthDec. *)
+let SourceReceive(source: bitstring) =
+    in(c, env: bitstring);
+    let rust_primitives__hax__Tuple2__Tuple2(pt, j_apke_pk) =
+        securedrop_protocol_minimal__encrypt_decrypt__decrypt_with_sender(source, env) in
+    event SourceReceivedReply(pt, j_apke_pk).
+
+process
+    new j_apke_sk: bitstring; new j_fetch_sk: bitstring; new j_meta_sk: bitstring;
+    new s_apke_sk: bitstring; new s_fetch_sk: bitstring; new s_meta_sk: bitstring;
+    new ph1: bitstring; new ph2: bitstring;
+    let journalist = sd_secret(j_apke_sk, j_fetch_sk, j_meta_sk) in
+    (* source reply view: the source's long-term APKE key, fetch key, metadata key *)
+    let source_pub = sd_public(
+        sd_apke__pk(s_apke_sk), crypto__dh_pub(s_fetch_sk), sd_pke__pk(s_meta_sk)) in
+    ( JournalistReply(journalist, source_pub, ph1, ph2)
+    | SourceReceive(sd_journalist(s_apke_sk, s_meta_sk, s_fetch_sk)) )
+
+(* EXPECTPV
+RESULT not attacker(SECRET_REPLY[]) is true.
+RESULT event(SourceReceivedReply(m_11,j)) ==> event(JournalistReplied(m_11,j)) is true.
+RESULT not event(SourceReceivedReply(m_11,j)) is false.
+END *)

@@ -1,0 +1,18 @@
+(*****************************************************************)
+(* missingdecl.pvl — UNDEFINED externals referenced by lib.pvl   *)
+(*                                                               *)
+(* DIAGNOSTIC, not part of the model. Each symbol below is       *)
+(* referenced by lib.pvl but has no definition (and is not in    *)
+(* primitives.pvl). Supply a real one by hand, or by extracting  *)
+(* the crate that owns it (e.g. a separately-extracted           *)
+(* dependency). Declared WITHOUT `[data]` because the real       *)
+(* nature (one-way fun / data constructor / letfun) is unknown.  *)
+(* GOAL: this file is EMPTY.                                     *)
+(*****************************************************************)
+const string_lit__DH_x20Keygen_x20_x28hint_x29_x20failed: bitstring.
+const string_lit__Failed_x20to_x20generate_x20shared_x20secret: bitstring.
+const string_lit__Metadata_x20must_x20contain_x20valid_x20sender_x20APKE_x20key_x20tuple: bitstring.
+const string_lit__SD_x2dAPKE_x20AuthDec_x20failed: bitstring.
+const string_lit__SD_x2dAPKE_x20AuthEnc_x20failed: bitstring.
+const string_lit__Valid_x20Keybundle_x20should_x20allow_x20metadata_x20seal: bitstring.
+const string_lit__we_x20should_x20find_x20exactly_x201_x20result: bitstring.

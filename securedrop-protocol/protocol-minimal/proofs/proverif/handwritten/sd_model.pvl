@@ -1,0 +1,58 @@
+(*****************************************************************)
+(*  sd_model.pvl — honest-user model for the extracted protocol   *)
+(*                                                               *)
+(*  `encrypt_decrypt::encrypt` is generic over UserSecret /       *)
+(*  UserPublic, so hax extracts its key accessors as abstract     *)
+(*  functions. Here we give them meaning over concrete honest     *)
+(*  user terms — a user IS its bundle of keys (the SPQR model.pvl  *)
+(*  pattern). Load AFTER sd_crypto.pvl, BEFORE lib.pvl.           *)
+(*                                                               *)
+(*  A source (UserSecret) carries (skApke, skFetch, skMeta).      *)
+(*  A recipient view (UserPublic) carries the public keys the     *)
+(*  sender needs: the EPHEMERAL apke enc key, the fetch key, and   *)
+(*  the metadata key.                                             *)
+(*****************************************************************)
+
+(* Secret user: long-term/ephemeral secret keys. *)
+fun sd_secret(bitstring, bitstring, bitstring): bitstring [data].   (* skApke, skFetch, skMeta *)
+reduc forall a: bitstring, f: bitstring, m: bitstring;
+  securedrop_protocol_minimal__traits__UserSecret__message_auth_key(sd_secret(a, f, m)) = a.
+reduc forall a: bitstring, f: bitstring, m: bitstring;
+  securedrop_protocol_minimal__traits__UserSecret__own_message_auth_pk(sd_secret(a, f, m)) = sd_apke__pk(a).
+
+(* Public recipient view: (message_enc_pk, fetch_pk, metadata_pk). *)
+fun sd_public(bitstring, bitstring, bitstring): bitstring [data].   (* pkEnc, pkFetch, pkMeta *)
+reduc forall pe: bitstring, pf: bitstring, pm: bitstring;
+  securedrop_protocol_minimal__traits__UserPublic__message_enc_pk(sd_public(pe, pf, pm)) = pe.
+reduc forall pe: bitstring, pf: bitstring, pm: bitstring;
+  securedrop_protocol_minimal__traits__UserPublic__fetch_pk(sd_public(pe, pf, pm)) = pf.
+reduc forall pe: bitstring, pf: bitstring, pm: bitstring;
+  securedrop_protocol_minimal__traits__UserPublic__message_metadata_pk(sd_public(pe, pf, pm)) = pm.
+
+(* Receiver model for the extracted `decrypt_with_sender`: a journalist holds one
+   ephemeral key bundle (apke secret + metadata secret) and a fetch keypair. The
+   key-bundle / keypair structs are `#[opaque]` in the ProVerif extraction, so ALL
+   their machinery lives here (this breaks the lib<->model dependency cycle: the
+   bundle constructor would otherwise be defined in lib.pvl, which loads AFTER this).
+   The backend's trial-decrypt loop consumes `keybundles()` as an `array_cons` list. *)
+fun sd_bundle(bitstring, bitstring): bitstring [data].   (* apkeSk, metaSk *)
+fun sd_kp_apke(bitstring): bitstring [data].             (* wraps apke secret *)
+fun sd_kp_meta(bitstring): bitstring [data].             (* wraps metadata secret *)
+
+(* bundle.apke / bundle.metadata_kp, then keypair.private_key() (the `sk` field). *)
+reduc forall a: bitstring, m: bitstring;
+  securedrop_protocol_minimal__keys__MessageKeyBundle__MessageKeyBundle__apke(sd_bundle(a, m)) = sd_kp_apke(a).
+reduc forall a: bitstring, m: bitstring;
+  securedrop_protocol_minimal__keys__MessageKeyBundle__MessageKeyBundle__metadata_kp(sd_bundle(a, m)) = sd_kp_meta(m).
+reduc forall a: bitstring;
+  securedrop_protocol_minimal__message__MessageKeyPair__MessageKeyPair__sk(sd_kp_apke(a)) = a.
+reduc forall m: bitstring;
+  securedrop_protocol_minimal__metadata__MetadataKeyPair__MetadataKeyPair__sk(sd_kp_meta(m)) = m.
+
+fun sd_journalist(bitstring, bitstring, bitstring): bitstring [data].   (* apkeSk, metaSk, fetchSk *)
+reduc forall a: bitstring, m: bitstring, f: bitstring;
+  securedrop_protocol_minimal__traits__UserSecret__keybundles(sd_journalist(a, m, f)) =
+    rust_primitives__hax__array_cons(sd_bundle(a, m), rust_primitives__hax__array_nil()).
+reduc forall a: bitstring, m: bitstring, f: bitstring;
+  securedrop_protocol_minimal__traits__UserSecret__fetch_keypair(sd_journalist(a, m, f)) =
+    rust_primitives__hax__Tuple2__Tuple2(f, crypto__dh_pub(f)).

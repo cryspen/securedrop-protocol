@@ -11,10 +11,13 @@ pub(crate) const DH_SHARED_SECRET_LEN: usize =
     crate::primitives::provider::curve25519::LEN_DH_SHARE;
 
 /// An X25519 public key.
+// ProVerif: atomic DH element; `pk = crypto__dh_pub(sk)`. into_bytes is identity.
+#[cfg_attr(hax_backend_proverif, hax_lib::opaque)]
 #[derive(Debug, Clone, Copy)]
 pub struct DHPublicKey([u8; DH_PUBLIC_KEY_LEN]);
 
 impl DHPublicKey {
+    #[cfg_attr(hax_backend_proverif, hax_lib::proverif::replace_body("self"))]
     pub fn into_bytes(self) -> [u8; DH_PUBLIC_KEY_LEN] {
         self.0
     }
@@ -42,14 +45,17 @@ impl<'de> serde::Deserialize<'de> for DHPublicKey {
 }
 
 /// An X25519 private key.
+#[cfg_attr(hax_backend_proverif, hax_lib::opaque)]
 #[derive(Debug, Clone)]
 pub struct DHPrivateKey([u8; DH_PRIVATE_KEY_LEN]);
 
 impl DHPrivateKey {
+    #[cfg_attr(hax_backend_proverif, hax_lib::proverif::replace_body("self"))]
     pub fn as_bytes(&self) -> &[u8; DH_PRIVATE_KEY_LEN] {
         &self.0
     }
 
+    #[cfg_attr(hax_backend_proverif, hax_lib::proverif::replace_body("self"))]
     pub fn into_bytes(self) -> [u8; DH_PRIVATE_KEY_LEN] {
         self.0
     }
@@ -60,10 +66,12 @@ impl DHPrivateKey {
 }
 
 /// An X25519 shared secret.
+#[cfg_attr(hax_backend_proverif, hax_lib::opaque)]
 #[derive(Debug, Clone)]
 pub struct DHSharedSecret([u8; 32]);
 
 impl DHSharedSecret {
+    #[cfg_attr(hax_backend_proverif, hax_lib::proverif::replace_body("self"))]
     pub fn into_bytes(self) -> [u8; 32] {
         self.0
     }
@@ -86,6 +94,13 @@ pub fn deterministic_dh_keygen(randomness: [u8; 32]) -> Result<(DHPrivateKey, DH
 }
 
 /// Generate a new DH key pair using X25519
+// ProVerif: fresh scalar `sk`; public key is `crypto__dh_pub(sk)`.
+#[cfg_attr(
+    hax_backend_proverif,
+    hax_lib::proverif::replace_body(
+        "new x25519_sk: bitstring; rust_primitives__hax__Tuple2__Tuple2(x25519_sk, crypto__dh_pub(x25519_sk))"
+    )
+)]
 pub fn generate_dh_keypair<R: RngCore + CryptoRng>(
     rng: &mut R,
 ) -> Result<(DHPrivateKey, DHPublicKey), Error> {
@@ -140,6 +155,11 @@ pub fn dh_public_key_from_scalar(scalar: [u8; 32]) -> DHPublicKey {
 }
 
 /// Compute DH shared secret
+// ProVerif: `crypto__dh_shared(sk, pk)` with the standard commutativity equation.
+#[cfg_attr(
+    hax_backend_proverif,
+    hax_lib::proverif::replace_body("crypto__dh_shared(private_scalar, public_key)")
+)]
 pub fn dh_shared_secret(
     public_key: &DHPublicKey,
     private_scalar: [u8; 32],

@@ -1,0 +1,319 @@
+(*
+  Run with:
+    proverif -lib <hax>/hax-lib/proof-libs/proverif/primitives.pvl lib.pvl
+
+  The `primitives.pvl` library ships with hax and supplies
+  everything the extracted file references that isn't defined
+  below: the public channel `c`, the `construct_fail` sink,
+  `bitstring_default`/`bitstring_err`, the `Some`/`None`/
+  `True`/`False`/`nat_lit` constructors, `logical_and`/`or`, and
+  every `rust_primitives::*` / `core::*` / `hax_lib::*` opaque
+  function the extraction surface needs.
+
+  Any symbol this file references but does NOT define, and that is
+  not in `primitives.pvl`, is listed in the companion
+  `missingdecl.pvl`. That file is a DIAGNOSTIC, not part of the
+  model: each entry must be supplied by hand or by another crate's
+  extraction (e.g. a separately-extracted dependency). The goal is
+  for `missingdecl.pvl` to be EMPTY — anything in it is a reachable
+  definition that was silently stubbed out.
+*)
+
+
+
+
+(* src: protocol-minimal/src/message.rs:93 securedrop_protocol_minimal__message__Impl__private_key *)
+(*  Returns the private key. *)
+letfun securedrop_protocol_minimal__message__Impl__private_key(self: bitstring) =
+  securedrop_protocol_minimal__message__MessageKeyPair__MessageKeyPair__sk(self).
+(* src: protocol-minimal/src/message.rs:113 securedrop_protocol_minimal__message__Impl_1__from_bytes *)
+(*  Deserialize from `pk1 || pk2` bytes. *)
+(* *)
+(*  # Errors *)
+(* *)
+(*  Returns an error if the byte slice has incorrect length. *)
+letfun securedrop_protocol_minimal__message__Impl_1__from_bytes(bytes: bitstring) = bytes.
+
+(* src: protocol-minimal/src/message.rs:280 securedrop_protocol_minimal__message__auth_enc *)
+(*  SD-APKE.AuthEnc: encrypt message `m` from sender to recipient. *)
+(* *)
+(*  - `sk = (skS1, skS2)`: sender\'s SD-APKE private key *)
+(*  - `pk = (pkR1, pkR2)`: recipient\'s SD-APKE public key *)
+(*  - `ad`: associated data *)
+(*  - `info`: caller-supplied info (spec prepends `c2` internally: `info = c2 + info`) *)
+(* *)
+(*  # Errors *)
+(* *)
+(*  Returns an error if ML-KEM encapsulation or HPKE sealing fails. *)
+letfun securedrop_protocol_minimal__message__auth_enc(
+  rng: bitstring,
+  sk: bitstring,
+  pk: bitstring,
+  m: bitstring,
+  ad: bitstring,
+  info: bitstring
+) =
+  let hax_temp_output = (sd_apke__authenc(sk, pk, m, ad, info)) in
+  rust_primitives__hax__Tuple2__Tuple2(rng, hax_temp_output).
+(* src: protocol-minimal/src/message.rs:343 securedrop_protocol_minimal__message__auth_dec *)
+(*  SD-APKE.AuthDec: decrypt ciphertext from sender. *)
+(* *)
+(*  - `sk = (skR1, skR2)`: recipient\'s SD-APKE private key *)
+(*  - `pk = (pkS1, pkS2)`: sender\'s SD-APKE public key *)
+(*  - `ad`: associated data *)
+(*  - `info`: caller-supplied info (spec prepends `c2` internally: `info = c2 + info`) *)
+(* *)
+(*  # Errors *)
+(* *)
+(*  Returns an error if ML-KEM decapsulation or HPKE opening fails. *)
+letfun securedrop_protocol_minimal__message__auth_dec(
+  sk: bitstring,
+  pk: bitstring,
+  ct: bitstring,
+  ad: bitstring,
+  info: bitstring
+) = sd_apke__authdec(sk, pk, ct, ad, info).
+
+
+
+(* src: protocol-minimal/src/metadata.rs:60 securedrop_protocol_minimal__metadata__Impl__private_key *)
+(*  Returns the private key. *)
+letfun securedrop_protocol_minimal__metadata__Impl__private_key(self: bitstring) =
+  securedrop_protocol_minimal__metadata__MetadataKeyPair__MetadataKeyPair__sk(self).
+
+(* src: protocol-minimal/src/metadata.rs:238 securedrop_protocol_minimal__metadata__encrypt *)
+(*  SD-PKE.Enc: encrypt message `m` to recipient key `pk_r`, returning `(c, c\')`. *)
+(* *)
+(*  `m` is the sender\'s long-term APKE public key, which must be serializable. *)
+letfun securedrop_protocol_minimal__metadata__encrypt(pk_r: bitstring, m: bitstring) =
+  sd_pke__enc(pk_r, m).
+(* src: protocol-minimal/src/metadata.rs:276 securedrop_protocol_minimal__metadata__decrypt *)
+(*  SD-PKE.Dec: decrypt `(c, c\')` using recipient key `sk_r`, returning message `m`. *)
+(* *)
+(*  # Errors *)
+(* *)
+(*  Returns an error if HPKE decryption fails. *)
+letfun securedrop_protocol_minimal__metadata__decrypt(sk_r: bitstring, ct: bitstring) =
+  sd_pke__dec(sk_r, ct).
+
+(* src: protocol-minimal/src/primitives/x25519.rs:20 securedrop_protocol_minimal__primitives__x25519__Impl__into_bytes *)
+letfun securedrop_protocol_minimal__primitives__x25519__Impl__into_bytes(self: bitstring) = self.
+
+(* src: protocol-minimal/src/primitives/x25519.rs:58 securedrop_protocol_minimal__primitives__x25519__Impl_1__into_bytes *)
+letfun securedrop_protocol_minimal__primitives__x25519__Impl_1__into_bytes(self: bitstring) = self.
+
+(* src: protocol-minimal/src/primitives/x25519.rs:74 securedrop_protocol_minimal__primitives__x25519__Impl_2__into_bytes *)
+letfun securedrop_protocol_minimal__primitives__x25519__Impl_2__into_bytes(self: bitstring) = self.
+(* src: protocol-minimal/src/primitives/x25519.rs:100 securedrop_protocol_minimal__primitives__x25519__generate_dh_keypair *)
+(*  Generate a new DH key pair using X25519 *)
+letfun securedrop_protocol_minimal__primitives__x25519__generate_dh_keypair(rng: bitstring) =
+  let hax_temp_output = (new x25519_sk: bitstring; rust_primitives__hax__Tuple2__Tuple2(x25519_sk, crypto__dh_pub(x25519_sk))) in
+  rust_primitives__hax__Tuple2__Tuple2(rng, hax_temp_output).
+(* src: protocol-minimal/src/primitives/x25519.rs:161 securedrop_protocol_minimal__primitives__x25519__dh_shared_secret *)
+(*  Compute DH shared secret *)
+letfun securedrop_protocol_minimal__primitives__x25519__dh_shared_secret(
+  public_key: bitstring,
+  private_scalar: bitstring
+) = crypto__dh_shared(private_scalar, public_key).
+(* src: protocol-minimal/src/ciphertext.rs:44 securedrop_protocol_minimal__ciphertext__Envelope *)
+(*  The full submission `(C_S, X, Z)` sent from sender to server in step 6. *)
+(* *)
+(*  - `C_S = (ct^APKE, ct^PKE)`: the two ciphertexts *)
+(*  - `X = g^x`: ephemeral DH public key (hint) *)
+(*  - `Z = (pk_R^fetch)^x`: DH share for fetching (hint) *)
+(* *)
+(*  The server stores `(id, C_S, X, Z)` per message. *)
+fun securedrop_protocol_minimal__ciphertext__Envelope__Envelope(
+  bitstring,
+  bitstring,
+  bitstring,
+  bitstring
+): bitstring [data].
+reduc forall v_0: bitstring, v_1: bitstring, v_2: bitstring, v_3: bitstring;
+  securedrop_protocol_minimal__ciphertext__Envelope__Envelope__ct_apke(
+    securedrop_protocol_minimal__ciphertext__Envelope__Envelope(v_0, v_1, v_2, v_3)
+  ) = v_0.
+reduc forall v_0: bitstring, v_1: bitstring, v_2: bitstring, v_3: bitstring;
+  securedrop_protocol_minimal__ciphertext__Envelope__Envelope__ct_pke(
+    securedrop_protocol_minimal__ciphertext__Envelope__Envelope(v_0, v_1, v_2, v_3)
+  ) = v_1.
+reduc forall v_0: bitstring, v_1: bitstring, v_2: bitstring, v_3: bitstring;
+  securedrop_protocol_minimal__ciphertext__Envelope__Envelope__mgdh_pubkey(
+    securedrop_protocol_minimal__ciphertext__Envelope__Envelope(v_0, v_1, v_2, v_3)
+  ) = v_2.
+reduc forall v_0: bitstring, v_1: bitstring, v_2: bitstring, v_3: bitstring;
+  securedrop_protocol_minimal__ciphertext__Envelope__Envelope__mgdh(
+    securedrop_protocol_minimal__ciphertext__Envelope__Envelope(v_0, v_1, v_2, v_3)
+  ) = v_3.
+(* src: protocol-minimal/src/ciphertext.rs:78 securedrop_protocol_minimal__ciphertext__Plaintext *)
+(*  Toy pt structure - TODO: provide params in correct order *)
+fun securedrop_protocol_minimal__ciphertext__Plaintext__Plaintext(
+  bitstring,
+  bitstring,
+  bitstring
+): bitstring [data].
+reduc forall v_0: bitstring, v_1: bitstring, v_2: bitstring;
+  securedrop_protocol_minimal__ciphertext__Plaintext__Plaintext__sender_reply_pubkey_hybrid(
+    securedrop_protocol_minimal__ciphertext__Plaintext__Plaintext(v_0, v_1, v_2)
+  ) = v_0.
+reduc forall v_0: bitstring, v_1: bitstring, v_2: bitstring;
+  securedrop_protocol_minimal__ciphertext__Plaintext__Plaintext__sender_fetch_key(
+    securedrop_protocol_minimal__ciphertext__Plaintext__Plaintext(v_0, v_1, v_2)
+  ) = v_1.
+reduc forall v_0: bitstring, v_1: bitstring, v_2: bitstring;
+  securedrop_protocol_minimal__ciphertext__Plaintext__Plaintext__msg(
+    securedrop_protocol_minimal__ciphertext__Plaintext__Plaintext(v_0, v_1, v_2)
+  ) = v_2.
+(* src: protocol-minimal/src/ciphertext.rs:90 securedrop_protocol_minimal__ciphertext__Impl_1__to_bytes *)
+letfun securedrop_protocol_minimal__ciphertext__Impl_1__to_bytes(self: bitstring) = self.
+(* src: protocol-minimal/src/ciphertext.rs:107 securedrop_protocol_minimal__ciphertext__Impl_1__from_bytes *)
+letfun securedrop_protocol_minimal__ciphertext__Impl_1__from_bytes(pt_bytes: bitstring) = pt_bytes.
+
+
+
+
+
+
+
+(* src: protocol-minimal/src/sign.rs:244 securedrop_protocol_minimal__sign__Impl_10__sign *)
+(*  Sign `msg` in domain `D`, returning a `Signature<D>`. *)
+(* *)
+(*  The actual preimage is `len(tag) || tag || msg` where `tag = D::TAG`. *)
+letfun securedrop_protocol_minimal__sign__Impl_10__sign(self: bitstring, msg: bitstring) =
+  crypto__sign(self, msg).
+(* src: protocol-minimal/src/sign.rs:279 securedrop_protocol_minimal__sign__Impl_11__verify *)
+(*  Verify `sig` over `msg`. The domain is determined by the type of `sig`. *)
+(* *)
+(*  Returns an error if the signature is invalid. *)
+letfun securedrop_protocol_minimal__sign__Impl_11__verify(
+  self: bitstring,
+  msg: bitstring,
+  sig: bitstring
+) = crypto__sig_verify(self, msg, sig).
+(* src: protocol-minimal/src/encrypt_decrypt.rs:16 securedrop_protocol_minimal__encrypt_decrypt__NR_ID *)
+const securedrop_protocol_minimal__encrypt_decrypt__NR_ID: bitstring.
+(* src: protocol-minimal/src/encrypt_decrypt.rs:25 securedrop_protocol_minimal__encrypt_decrypt__encrypt *)
+(*  Encrypt a message from a sender to a recipient (step 6). *)
+(* *)
+(*  Produces an [`Envelope`] containing: *)
+(*  - `ct^APKE`: SD-APKE ciphertext (encrypted message) *)
+(*  - `ct^PKE`: SD-PKE ciphertext (encrypted sender APKE public key) *)
+(*  - `(X, Z)`: hint for privacy-preserving message fetching *)
+letfun securedrop_protocol_minimal__encrypt_decrypt__encrypt(
+  rng: bitstring,
+  sender: bitstring,
+  plaintext: bitstring,
+  recipient: bitstring
+) =
+  let rust_primitives__hax__Tuple2__Tuple2(
+    tmp0: bitstring,
+    out_kw: bitstring
+  ) = securedrop_protocol_minimal__message__auth_enc(
+    rng,
+    securedrop_protocol_minimal__traits__UserSecret__message_auth_key(sender),
+    securedrop_protocol_minimal__traits__UserPublic__message_enc_pk(recipient),
+    securedrop_protocol_minimal__ciphertext__Impl_1__to_bytes(plaintext),
+    securedrop_protocol_minimal__encrypt_decrypt__NR_ID,
+    securedrop_protocol_minimal__primitives__x25519__Impl__into_bytes(
+      securedrop_protocol_minimal__traits__UserPublic__fetch_pk(recipient)
+    )
+  ) in (let rust_primitives__hax__Tuple2__Tuple2(
+    tmp0_1: bitstring,
+    out_kw_1: bitstring
+  ) = securedrop_protocol_minimal__primitives__x25519__generate_dh_keypair(
+    tmp0
+  ) in (let rust_primitives__hax__Tuple2__Tuple2(
+    hint_esk: bitstring,
+    hint_epk: bitstring
+  ) = core__result__Impl__expect(
+    out_kw_1,
+    string_lit__DH_x20Keygen_x20_x28hint_x29_x20failed
+  ) in rust_primitives__hax__Tuple2__Tuple2(
+    tmp0_1,
+    securedrop_protocol_minimal__ciphertext__Envelope__Envelope(
+      core__result__Impl__expect(out_kw, string_lit__SD_x2dAPKE_x20AuthEnc_x20failed),
+      core__result__Impl__expect(
+        securedrop_protocol_minimal__metadata__encrypt(
+          securedrop_protocol_minimal__traits__UserPublic__message_metadata_pk(recipient),
+          securedrop_protocol_minimal__traits__UserSecret__own_message_auth_pk(sender)
+        ),
+        string_lit__Valid_x20Keybundle_x20should_x20allow_x20metadata_x20seal
+      ),
+      securedrop_protocol_minimal__primitives__x25519__Impl__into_bytes(hint_epk),
+      securedrop_protocol_minimal__primitives__x25519__Impl_2__into_bytes(
+        core__result__Impl__expect(
+          securedrop_protocol_minimal__primitives__x25519__dh_shared_secret(
+            securedrop_protocol_minimal__traits__UserPublic__fetch_pk(recipient),
+            securedrop_protocol_minimal__primitives__x25519__Impl_1__into_bytes(hint_esk)
+          ),
+          string_lit__Failed_x20to_x20generate_x20shared_x20secret
+        )
+      )
+    )
+  ) else bitstring_err()) else bitstring_err()) else bitstring_err().
+(* src: protocol-minimal/src/encrypt_decrypt.rs:81 securedrop_protocol_minimal__encrypt_decrypt__decrypt_with_sender *)
+(*  Decrypt like [`decrypt`], additionally returning the sender's long-term *)
+(*  SD-APKE public key `pk_S^APKE` recovered from `ct^PKE`. *)
+letfun securedrop_protocol_minimal__encrypt_decrypt__decrypt_with_sender(
+  receiver: bitstring,
+  envelope: bitstring
+) =
+  let found = None() in
+  let found_3 = ((let bl__seq0 = (core__iter__traits__collect__IntoIterator__into_iter(
+    core__slice__Impl__iter(securedrop_protocol_minimal__traits__UserSecret__keybundles(receiver))
+  )) in let bl__acc0 = (found) in 
+  let rust_primitives__hax__array_cons(bundle, bl__seq1) = bl__seq0 in (let found_1 = bl__acc0 in
+  let bl__acc1 = (let m = securedrop_protocol_minimal__metadata__decrypt(
+    securedrop_protocol_minimal__metadata__Impl__private_key(
+      securedrop_protocol_minimal__keys__MessageKeyBundle__MessageKeyBundle__metadata_kp(bundle)
+    ),
+    securedrop_protocol_minimal__ciphertext__Envelope__Envelope__ct_pke(envelope)
+  ) in Some(rust_primitives__hax__Tuple2__Tuple2(bundle, m))) in
+  let rust_primitives__hax__array_cons(bundle, bl__seq2) = bl__seq1 in (let found_1 = bl__acc1 in
+  let bl__acc2 = (let m = securedrop_protocol_minimal__metadata__decrypt(
+    securedrop_protocol_minimal__metadata__Impl__private_key(
+      securedrop_protocol_minimal__keys__MessageKeyBundle__MessageKeyBundle__metadata_kp(bundle)
+    ),
+    securedrop_protocol_minimal__ciphertext__Envelope__Envelope__ct_pke(envelope)
+  ) in Some(rust_primitives__hax__Tuple2__Tuple2(bundle, m))) in
+  let rust_primitives__hax__array_cons(bundle, bl__seq3) = bl__seq2 in (let found_1 = bl__acc2 in
+  let bl__acc3 = (let m = securedrop_protocol_minimal__metadata__decrypt(
+    securedrop_protocol_minimal__metadata__Impl__private_key(
+      securedrop_protocol_minimal__keys__MessageKeyBundle__MessageKeyBundle__metadata_kp(bundle)
+    ),
+    securedrop_protocol_minimal__ciphertext__Envelope__Envelope__ct_pke(envelope)
+  ) in Some(rust_primitives__hax__Tuple2__Tuple2(bundle, m))) in
+  let rust_primitives__hax__array_cons(bl__xh, bl__xt) = bl__seq3 in bitstring_err() else (bl__acc3)) else (bl__acc2)) else (bl__acc1)) else (bl__acc0))) in
+  let rust_primitives__hax__Tuple2__Tuple2(
+    bundle_1: bitstring,
+    raw_metadata: bitstring
+  ) = core__option__Impl__expect(
+    found_3,
+    string_lit__we_x20should_x20find_x20exactly_x201_x20result
+  ) in (let sender_pk = core__result__Impl__expect(
+    securedrop_protocol_minimal__message__Impl_1__from_bytes(raw_metadata),
+    string_lit__Metadata_x20must_x20contain_x20valid_x20sender_x20APKE_x20key_x20tuple
+  ) in
+  rust_primitives__hax__Tuple2__Tuple2(
+    core__result__Impl__unwrap(
+      securedrop_protocol_minimal__ciphertext__Impl_1__from_bytes(
+        core__result__Impl__expect(
+          securedrop_protocol_minimal__message__auth_dec(
+            securedrop_protocol_minimal__message__Impl__private_key(
+              securedrop_protocol_minimal__keys__MessageKeyBundle__MessageKeyBundle__apke(bundle_1)
+            ),
+            sender_pk,
+            securedrop_protocol_minimal__ciphertext__Envelope__Envelope__ct_apke(envelope),
+            securedrop_protocol_minimal__encrypt_decrypt__NR_ID,
+            securedrop_protocol_minimal__primitives__x25519__Impl__into_bytes(
+              rust_primitives__hax__Tuple2__Tuple2__1(
+                securedrop_protocol_minimal__traits__UserSecret__fetch_keypair(receiver)
+              )
+            )
+          ),
+          string_lit__SD_x2dAPKE_x20AuthDec_x20failed
+        )
+      )
+    ),
+    sender_pk
+  )) else bitstring_err().

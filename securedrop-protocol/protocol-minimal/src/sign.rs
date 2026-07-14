@@ -83,6 +83,7 @@ impl DomainTag for FpfOnNewsroom {
 /// A `Signature<D>` can only be verified against a message using the same
 /// domain `D`, making cross-domain misuse a compile error rather than a
 /// runtime failure.
+#[cfg_attr(hax_backend_proverif, hax_lib::opaque)]
 pub struct Signature<D: DomainTag> {
     bytes: [u8; 64],
     // `PhantomData<D>` rather than `PhantomData<fn() -> D>`: the function type
@@ -165,10 +166,13 @@ fn tagged_preimage<D: DomainTag>(msg: &[u8]) -> Vec<u8> {
 }
 
 /// An Ed25519 verification key.
+// ProVerif: `vk = crypto__vk_of(sk)` in the symbolic model.
+#[cfg_attr(hax_backend_proverif, hax_lib::opaque)]
 #[derive(Copy, Clone)]
 pub struct VerifyingKey([u8; KEY_LEN_ED25519]);
 
 /// An Ed25519 signing key.
+#[cfg_attr(hax_backend_proverif, hax_lib::opaque)]
 pub(crate) struct SigningSecretKey([u8; KEY_LEN_ED25519]);
 
 impl VerifyingKey {
@@ -191,6 +195,7 @@ impl SigningSecretKey {
     }
 }
 
+#[cfg_attr(hax_backend_proverif, hax_lib::opaque)]
 pub struct SigningKey {
     pub vk: VerifyingKey,
     sk: SigningSecretKey,
@@ -231,6 +236,13 @@ impl SigningKey {
     /// Sign `msg` in domain `D`, returning a `Signature<D>`.
     ///
     /// The actual preimage is `len(tag) || tag || msg` where `tag = D::TAG`.
+    // ProVerif: EUF-CMA signature `crypto__sign(sk, msg)`. NOTE (M3): the type-level
+    // domain separator `D` is not yet reflected in the symbolic term; add the tag to
+    // the signed message when modeling the enrollment trust chain.
+    #[cfg_attr(
+        hax_backend_proverif,
+        hax_lib::proverif::replace_body("crypto__sign(self, msg)")
+    )]
     pub fn sign<D: DomainTag>(&self, msg: &[u8]) -> Signature<D> {
         let preimage = tagged_preimage::<D>(msg);
         let bytes = provider::ed25519::sign(&preimage, self.sk.as_bytes());
@@ -260,6 +272,12 @@ impl VerifyingKey {
     /// Verify `sig` over `msg`. The domain is determined by the type of `sig`.
     ///
     /// Returns an error if the signature is invalid.
+    // ProVerif: `crypto__sig_verify(vk, msg, sig)` reduces to unit only for a genuine
+    // signature under the matching key (forgery has no value -> propagates as `Err`).
+    #[cfg_attr(
+        hax_backend_proverif,
+        hax_lib::proverif::replace_body("crypto__sig_verify(self, msg, sig)")
+    )]
     pub fn verify<D: DomainTag>(&self, msg: &[u8], sig: &Signature<D>) -> Result<(), Error> {
         let preimage = tagged_preimage::<D>(msg);
         provider::ed25519::verify(&preimage, self.as_bytes(), &sig.bytes)
