@@ -218,6 +218,40 @@ the enrollment process wiring + per-domain tags (§5b.3); the fetch DH clue (§5
 confirms these compositions extract with ~10 clean leaves; completing it requires
 modeling the HPKE-AuthPsk + ML-KEM leaves and a hybrid-key harness (`PLAN.md`).
 
+#### Coverage in numbers
+
+The **translated-and-verified core** (category ①) is compact — 5 functions:
+
+| Rust function | ~Rust src lines | → ProVerif lines |
+|---|---|---|
+| `encrypt_decrypt::encrypt` | ~34 | 52 |
+| `encrypt_decrypt::decrypt_with_sender` | ~25 | 63 |
+| `sign` + `verify` + `tagged_preimage` | ~25 | 7 + 10 + 19 |
+| **total translated** | **~85** | **~151** |
+
+The full generated model `extraction/lib.pvl` is **372 lines** (258 code; 25 `letfun`s):
+the ~151 composition lines above, plus ~15 one-line **leaf redirects** (crypto/
+serialization abstracted) and the rest **auto-generated type machinery** (struct
+constructors + field accessors).
+
+The **trusted, hand-written side** (categories ② and ③ — *assumed*, not translated) is
+~8× larger:
+
+| File group | lines |
+|---|---|
+| `lib/*.pvl` — vendored generic crypto + prelude (§4a) | 627 |
+| `queries/*.pv` — roles, events, security queries (§4c) | 409 |
+| `handwritten/*.pvl` — SecureDrop crypto + honest-user model (§4a/§4c) | 114 |
+| **total trusted hand-written ProVerif** | **~1150** |
+
+For scale, the analyzed crate (`protocol-minimal/src`) is ~3,730 lines of Rust, so the
+~85 translated lines are **~2%** of it. That is the *intended* 2%: the remainder is
+crypto-primitive wrappers (the leaf boundary — abstracted by design), serde /
+serialization (excluded), key-type boilerplate, and tests — none of which are targets of
+symbolic protocol analysis. The lever to raise this figure is lowering the leaf boundary
+on the message crypto (SD-APKE / SD-PKE), which would move those constructions from
+one-line redirects into translated compositions.
+
 ### 5b. Specific assumptions
 
 1. **SD-APKE is modeled atomically.** HPKE-AuthPsk = DH-AKEM (sender auth) ⊕ ML-KEM (PSK)
