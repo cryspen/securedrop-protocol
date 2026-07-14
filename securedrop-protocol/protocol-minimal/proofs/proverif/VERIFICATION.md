@@ -203,16 +203,55 @@ functional correctness / panic-freedom (the F\* track).
 
 ---
 
-## 6. Reproducibility & pins
+## 6. Reproducing the results
 
-- **ProVerif** — any recent 2.0x (developed against the `hax-proverif` opam switch's build).
-- **hax ProVerif backend** — the `hax-proverif` opam switch / a `~/hax-proverif-backend`
-  checkout (draft PR cryspen/hax#2068). Only needed to **re-extract** (`make
-  proverif-extract`); the engine-free `make proverif-check` needs only `proverif`.
-- **`hax-lib`** — crates.io `0.3.7` for normal builds; the dev `hax-lib` (with the
-  `cfg(hax_backend_proverif)`-gated macros) is injected at extraction time via
-  `cargo --config`, never as a committed patch, so `cargo build` / CI / F\* are unaffected.
-- **CI** — `.github/workflows/proverif.yml` runs the engine-free lane on every push.
+There are two levels. **Level 1 needs only public tools; Level 2 additionally needs the
+(public but unreleased) hax ProVerif backend.**
+
+### Level 1 — re-check the verdicts (public tools only, no hax)
+
+The generated model (`extraction/lib.pvl`, SHA-pinned in `extraction/lib.pvl.sha256`), the
+vendored symbolic libraries (`lib/{primitives,cryptolib}.pvl`), the SecureDrop crypto model
+(`handwritten/*.pvl`), and every query (`queries/*.pv`) are all committed. So ProVerif
+alone re-checks all 13 properties:
+
+```sh
+opam install proverif           # ProVerif 2.05 (public, INRIA); or install it any other way
+# from the crate root: securedrop-protocol/protocol-minimal
+make proverif-check             # runs reconstruct-proverif (digest check) + all queries
+```
+
+`make proverif-check` invokes `proverif` directly (no opam switch, no hax); if `proverif`
+is only reachable via opam, use `opam exec -- make proverif-check`. This is exactly what
+`.github/workflows/proverif.yml` runs on every push. Trusting (or auditing) the committed
+`lib.pvl` — which carries `(* src: <file>:<line> ... *)` provenance comments and a
+`lib.pvl.map` source map back to the Rust — is all Level 1 requires.
+
+### Level 2 — re-derive the model from the Rust (needs the hax backend)
+
+To regenerate `lib.pvl` from the Rust source rather than trust the committed snapshot:
+
+- Build the hax ProVerif backend from **`github.com/cryspen/hax`, branch
+  `proverif-rust-backend`** (draft PR **#2068**; engine used here: commit
+  **`637fc91499`**). This backend is **not merged upstream and not a released tool** — it
+  must be built from that branch (it prints `Experimental backend "proverif" is work in
+  progress`). See that repo's `setup-local.sh` (installs into a `hax-proverif` opam switch)
+  or `setup-hax.sh` (opam-free source build).
+- Point `HAX_PROVERIF_DIR` at that checkout and run `make proverif-extract`, then
+  `make proverif-check`. Extraction rewrites `lib.pvl` and re-pins its digest; a faithful
+  re-extraction leaves the committed model unchanged.
+
+### Pins
+
+- **ProVerif** — 2.05.
+- **hax ProVerif backend** — `cryspen/hax` @ `proverif-rust-backend` (PR #2068), engine
+  commit `637fc91499`. Vendored `lib/*.pvl` are byte-copies from that tree
+  (`hax-lib/proof-libs/proverif/`); see `lib/PROVENANCE.md`.
+- **`hax-lib`** — crates.io `0.3.7` for normal builds; the dev `hax-lib` carrying the
+  `cfg(hax_backend_proverif)`-gated macros is injected at extraction time via
+  `cargo --config` (not a committed patch), so `cargo build` / CI / F\* are unaffected.
+- **CI** — `.github/workflows/proverif.yml` runs Level 1 on every push (installs ProVerif
+  via opam; no hax build).
 
 ## 7. Integrity guarantees of this change
 
