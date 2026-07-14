@@ -19,4 +19,7 @@ authors = ["SecureDrop Team <securedrop@freedom.press>"]
 license = "GPL-3.0"
 
 [workspace.lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(hax)"] }
+# `cfg(hax_backend_proverif)` is set only by hax during `cargo hax into proverif`
+# (it gates the ProVerif-specific annotations). Normal builds, `cargo test`, and
+# `into fstar` never set it, so those lanes strip the gated annotations entirely.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(hax)", "cfg(hax_backend_proverif)"] }

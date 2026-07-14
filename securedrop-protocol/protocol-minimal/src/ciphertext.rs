@@ -85,6 +85,9 @@ pub struct Plaintext {
 }
 
 impl Plaintext {
+    // ProVerif: the plaintext is carried as an atomic term; to_bytes/from_bytes are
+    // identity so it round-trips through encrypt -> auth_enc/auth_dec -> decrypt.
+    #[cfg_attr(hax_backend_proverif, hax_lib::proverif::replace_body("self"))]
     pub fn to_bytes(&self) -> alloc::vec::Vec<u8> {
         // TODO: Deviates from spec
         let mut buf = Vec::new();
@@ -101,6 +104,7 @@ impl Plaintext {
     }
 
     // Toy parsing only
+    #[cfg_attr(hax_backend_proverif, hax_lib::proverif::replace_body("pt_bytes"))]
     pub fn from_bytes(pt_bytes: &[u8]) -> Result<Self, Error> {
         let mut offset = 0;
 

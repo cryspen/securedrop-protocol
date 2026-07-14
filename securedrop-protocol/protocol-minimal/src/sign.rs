@@ -83,6 +83,7 @@ impl DomainTag for FpfOnNewsroom {
 /// A `Signature<D>` can only be verified against a message using the same
 /// domain `D`, making cross-domain misuse a compile error rather than a
 /// runtime failure.
+#[cfg_attr(hax_backend_proverif, hax_lib::opaque)]
 pub struct Signature<D: DomainTag> {
     bytes: [u8; 64],
     // `PhantomData<D>` rather than `PhantomData<fn() -> D>`: the function type
@@ -118,6 +119,8 @@ impl<D: DomainTag> Eq for Signature<D> {}
 
 impl<D: DomainTag> Signature<D> {
     /// Reconstruct a [`Signature`] from its serialization.
+    // ProVerif serialization leaf: signature is atomic (opaque), so this is identity.
+    #[cfg_attr(hax_backend_proverif, hax_lib::proverif::replace_body("bytes"))]
     pub fn from_bytes(bytes: [u8; 64]) -> Self {
         Self {
             bytes,
@@ -126,6 +129,7 @@ impl<D: DomainTag> Signature<D> {
     }
 
     /// The byte serialization of this signature.
+    #[cfg_attr(hax_backend_proverif, hax_lib::proverif::replace_body("self"))]
     pub fn as_bytes(&self) -> [u8; 64] {
         self.bytes
     }
@@ -165,13 +169,18 @@ fn tagged_preimage<D: DomainTag>(msg: &[u8]) -> Vec<u8> {
 }
 
 /// An Ed25519 verification key.
+// ProVerif: `vk = crypto__vk_of(sk)` in the symbolic model.
+#[cfg_attr(hax_backend_proverif, hax_lib::opaque)]
 #[derive(Copy, Clone)]
 pub struct VerifyingKey([u8; KEY_LEN_ED25519]);
 
 /// An Ed25519 signing key.
+#[cfg_attr(hax_backend_proverif, hax_lib::opaque)]
 pub(crate) struct SigningSecretKey([u8; KEY_LEN_ED25519]);
 
 impl VerifyingKey {
+    // ProVerif serialization leaf: the verifying key is atomic (opaque) -> identity.
+    #[cfg_attr(hax_backend_proverif, hax_lib::proverif::replace_body("self"))]
     pub(crate) fn as_bytes(&self) -> &[u8; KEY_LEN_ED25519] {
         &self.0
     }
@@ -191,6 +200,7 @@ impl SigningSecretKey {
     }
 }
 
+#[cfg_attr(hax_backend_proverif, hax_lib::opaque)]
 pub struct SigningKey {
     pub vk: VerifyingKey,
     sk: SigningSecretKey,
@@ -231,12 +241,20 @@ impl SigningKey {
     /// Sign `msg` in domain `D`, returning a `Signature<D>`.
     ///
     /// The actual preimage is `len(tag) || tag || msg` where `tag = D::TAG`.
+    // ProVerif: EXTRACTED. The domain-separated preimage (`tagged_preimage`) and the
+    // Ed25519 leaf (`provider::ed25519::sign`) are the only abstracted parts, so domain
+    // separation is now part of the verified model rather than the harness.
     pub fn sign<D: DomainTag>(&self, msg: &[u8]) -> Signature<D> {
         let preimage = tagged_preimage::<D>(msg);
-        let bytes = provider::ed25519::sign(&preimage, self.sk.as_bytes());
+        // `self.as_bytes()` (not `self.sk.as_bytes()`) so the opaque signing key needs
+        // no field access in the ProVerif model.
+        let sk = self.as_bytes();
+        let bytes = provider::ed25519::sign(&preimage, &sk);
         Signature::from_bytes(bytes)
     }
 
+    // ProVerif serialization leaf: the signing key is atomic (opaque) -> identity.
+    #[cfg_attr(hax_backend_proverif, hax_lib::proverif::replace_body("self"))]
     pub(crate) fn as_bytes(&self) -> [u8; 32] {
         *self.sk.as_bytes()
     }
@@ -260,9 +278,13 @@ impl VerifyingKey {
     /// Verify `sig` over `msg`. The domain is determined by the type of `sig`.
     ///
     /// Returns an error if the signature is invalid.
+    // ProVerif: EXTRACTED (same domain-separated preimage as `sign`); only the Ed25519
+    // leaf (`provider::ed25519::verify`) is abstracted.
     pub fn verify<D: DomainTag>(&self, msg: &[u8], sig: &Signature<D>) -> Result<(), Error> {
         let preimage = tagged_preimage::<D>(msg);
-        provider::ed25519::verify(&preimage, self.as_bytes(), &sig.bytes)
+        // `sig.as_bytes()` (not `sig.bytes`) so the opaque signature needs no field access.
+        let sig_bytes = sig.as_bytes();
+        provider::ed25519::verify(&preimage, self.as_bytes(), &sig_bytes)
             .map_err(|_| anyhow::anyhow!("Signature verification failed"))
     }
 }

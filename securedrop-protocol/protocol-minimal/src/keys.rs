@@ -55,6 +55,9 @@ impl KeyBundlePublic {
     }
 }
 
+// ProVerif: modeled in the harness (proofs/proverif/handwritten/sd_model.pvl) so the
+// receiver's key-bundle machinery lives entirely there (avoids a lib<->model cycle).
+#[cfg_attr(hax_backend_proverif, hax_lib::opaque)]
 pub(crate) struct MessageKeyBundle {
     pub(crate) apke: MessageKeyPair,
     pub(crate) metadata_kp: MetadataKeyPair,

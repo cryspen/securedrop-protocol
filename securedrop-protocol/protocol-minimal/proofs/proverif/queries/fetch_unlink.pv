@@ -1,0 +1,44 @@
+(*****************************************************************)
+(*  fetch_unlink.pv — recipient anonymity / unlinkability          *)
+(*                                                               *)
+(*  The privacy goal of the DH fetch clue: the UNTRUSTED SERVER    *)
+(*  (and any network eavesdropper) cannot tell WHICH recipient a   *)
+(*  stored message is addressed to. Because the hint Z = pk_R^x     *)
+(*  blinds pk_R with the source's fresh x, a message for A is       *)
+(*  indistinguishable from one for B.                              *)
+(*                                                               *)
+(*  Modeled as ProVerif observational equivalence (diff-           *)
+(*  equivalence): the biprocess submits to `choice[pk_A, pk_B]` and *)
+(*  the attacker observes the stored hint (X, Z) plus every fetch   *)
+(*  challenge (pmgdh, enc_id). If the two sides are equivalent, the *)
+(*  server learns nothing about the recipient.                     *)
+(*                                                               *)
+(*  Recipients are NOT run here: unlinkability is about what the    *)
+(*  server/eavesdropper sees, not about a recipient's own decrypt. *)
+(*  Same clue/DH constructors as fetch.pv (defined inline).        *)
+(*****************************************************************)
+
+fun gen(bitstring): bitstring.
+fun cluex(bitstring): bitstring.
+fun cluez(bitstring, bitstring): bitstring.
+fun srvp(bitstring, bitstring): bitstring.
+fun srvk(bitstring, bitstring): bitstring.
+
+free MID: bitstring [private].   (* the stored message's id (same content, differing recipient) *)
+
+process
+    new r_sk_A: bitstring; new r_sk_B: bitstring;
+    let pk_A = gen(r_sk_A) in
+    let pk_B = gen(r_sk_B) in
+    out(c, pk_A); out(c, pk_B);            (* both recipients' fetch pubkeys are public *)
+    new x: bitstring;                      (* source's fresh ephemeral *)
+    let bigX = cluex(x) in
+    let bigZ = cluez(choice[pk_A, pk_B], x) in   (* addressed to A vs B *)
+    out(c, bigX); out(c, bigZ);            (* the stored hint (X, Z) *)
+    (* the server re-derives the fetch challenge with a fresh eph per request *)
+    ! ( new eph: bitstring;
+        out(c, (srvp(bigX, eph), crypto__aead_enc(srvk(bigZ, eph), MID, empty))) )
+
+(* EXPECTPV
+RESULT Observational equivalence is true.
+END *)

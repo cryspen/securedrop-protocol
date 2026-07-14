@@ -52,6 +52,15 @@ verify:  # Internal/CI: Type-check and verify extracted proofs.
 	# Verify:
 	$(MAKE) -C $(PROOF_DIR) ADMIT_MODULES="$(HAX_ADMITS)" all-keep-going
 
+.PHONY: proverif-check
+proverif-check:  ## Verify the ProVerif (symbolic) model against committed verdicts (engine-free; needs `proverif`).
+	python3 proofs/proverif/hax.py reconstruct-proverif
+	python3 proofs/proverif/hax.py check-proverif
+
+.PHONY: proverif-extract
+proverif-extract:  ## Re-extract the ProVerif model from Rust (needs the hax-proverif opam switch).
+	python3 proofs/proverif/hax.py extract-proverif
+
 .PHONY: hax-lib-version
 hax-lib-version:  # Internal: Query Cargo for the hax-lib version.
 	@cargo pkgid hax-lib 2>/dev/null | sed 's/.*@//'

@@ -1,0 +1,70 @@
+(*****************************************************************)
+(*  submission.pv — M2: source -> journalist submission           *)
+(*                                                               *)
+(*  Drives the ACTUAL extracted `encrypt_decrypt::encrypt` (which  *)
+(*  composes SD-APKE auth_enc + SD-PKE metadata + the DH fetch     *)
+(*  hint) with an honest source and an honest journalist, and      *)
+(*  models the journalist's receive with the extracted primitives  *)
+(*  (metadata::decrypt to recover the sender key, then auth_dec).   *)
+(*                                                               *)
+(*  Properties:                                                   *)
+(*   1. Submission confidentiality — attacker cannot learn the msg.*)
+(*   3. Sender authentication — if the journalist accepts msg m as  *)
+(*      from sender s, the source really sent m as s (SD-APKE       *)
+(*      implicit authentication).                                  *)
+(*   5. Sanity — the honest run reaches the receive (not vacuous).  *)
+(*****************************************************************)
+
+event SourceSubmitted(bitstring, bitstring).      (* pt_bytes, sender_apke_pk *)
+event JournalistReceived(bitstring, bitstring).   (* pt_bytes, recovered sender_apke_pk *)
+
+free SECRET_SUBMISSION: bitstring [private].
+
+(* 1. Submission confidentiality. *)
+query attacker(SECRET_SUBMISSION).
+
+(* 3. Sender authentication (non-injective agreement). *)
+query m: bitstring, s: bitstring;
+  event(JournalistReceived(m, s)) ==> event(SourceSubmitted(m, s)).
+
+(* 5. Sanity / reachability: the honest receive is reachable. *)
+query m: bitstring, s: bitstring; event(JournalistReceived(m, s)).
+
+(* Honest source: builds a plaintext carrying SECRET_SUBMISSION, records the
+   submission, then runs the extracted encrypt over its keys + the recipient view. *)
+let Source(source: bitstring, recipient_pub: bitstring, reply_pk: bitstring, fetch_key: bitstring) =
+    new rng: bitstring;
+    let pt = securedrop_protocol_minimal__ciphertext__Plaintext__Plaintext(
+                 reply_pk, fetch_key, SECRET_SUBMISSION) in
+    let pt_bytes = securedrop_protocol_minimal__ciphertext__Impl_1__to_bytes(pt) in
+    event SourceSubmitted(pt_bytes,
+        securedrop_protocol_minimal__traits__UserSecret__own_message_auth_pk(source));
+    let rust_primitives__hax__Tuple2__Tuple2(rng2, env) =
+        securedrop_protocol_minimal__encrypt_decrypt__encrypt(rng, source, pt, recipient_pub) in
+    out(c, env).
+
+(* Honest journalist: runs the FULL extracted `decrypt_with_sender` — trial-decrypt
+   over its key bundles to find the matching one, recover the sender's APKE key from
+   the metadata, then SD-APKE.AuthDec (binds sender identity). Records the receive. *)
+let Journalist(journalist: bitstring) =
+    in(c, env: bitstring);
+    let rust_primitives__hax__Tuple2__Tuple2(pt, sender_apke_pk) =
+        securedrop_protocol_minimal__encrypt_decrypt__decrypt_with_sender(journalist, env) in
+    event JournalistReceived(pt, sender_apke_pk).
+
+process
+    new skS_apke: bitstring; new skS_fetch: bitstring; new skS_meta: bitstring;
+    new skR_apke: bitstring; new skR_fetch: bitstring; new skR_meta: bitstring;
+    new reply_pk: bitstring; new fetch_key: bitstring;
+    let source = sd_secret(skS_apke, skS_fetch, skS_meta) in
+    (* recipient view = journalist ephemeral enc key, fetch key, metadata key *)
+    let recipient_pub = sd_public(
+        sd_apke__pk(skR_apke), crypto__dh_pub(skR_fetch), sd_pke__pk(skR_meta)) in
+    ( Source(source, recipient_pub, reply_pk, fetch_key)
+    | Journalist(sd_journalist(skR_apke, skR_meta, skR_fetch)) )
+
+(* EXPECTPV
+RESULT not attacker(SECRET_SUBMISSION[]) is true.
+RESULT event(JournalistReceived(m_11,s)) ==> event(SourceSubmitted(m_11,s)) is true.
+RESULT not event(JournalistReceived(m_11,s)) is false.
+END *)

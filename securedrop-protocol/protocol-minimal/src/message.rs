@@ -53,6 +53,9 @@ const LEN_MLKEM_ENCAPS_RAND: usize = 32;
 ///
 /// - `pk1`: DHKEM(X25519) component (`pk^AKEM`)
 /// - `pk2`: ML-KEM-768 component (`pk^PQ`)
+// ProVerif: SD-APKE key tuple is an atomic public key `sd_apke__pk(sk)` in the
+// symbolic model (see proofs/proverif/handwritten/sd_crypto.pvl).
+#[cfg_attr(hax_backend_proverif, hax_lib::opaque)]
 #[derive(Debug, Clone)]
 pub struct MessagePublicKey {
     pub(crate) dhakem: DhAkemPublicKey,  // pk1 in spec
@@ -63,12 +66,14 @@ pub struct MessagePublicKey {
 ///
 /// - `sk1`: DHKEM(X25519) component (`sk^AKEM`)
 /// - `sk2`: ML-KEM-768 component (`sk^PQ`)
+#[cfg_attr(hax_backend_proverif, hax_lib::opaque)]
 pub struct MessagePrivateKey {
     pub(crate) dhakem: DhAkemPrivateKey,  // sk1 in spec
     pub(crate) mlkem: MLKEM768PrivateKey, // sk2 in spec
 }
 
 /// A `(MessagePrivateKey, MessagePublicKey)` SD-APKE keypair.
+#[cfg_attr(hax_backend_proverif, hax_lib::opaque)]
 pub struct MessageKeyPair {
     sk: MessagePrivateKey,
     pk: MessagePublicKey,
@@ -104,6 +109,8 @@ impl MessagePublicKey {
     /// # Errors
     ///
     /// Returns an error if the byte slice has incorrect length.
+    // ProVerif: the APKE public key is atomic (opaque), so serialize/parse is identity.
+    #[cfg_attr(hax_backend_proverif, hax_lib::proverif::replace_body("bytes"))]
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
         use crate::primitives::dh_akem::DH_AKEM_PUBLIC_KEY_LEN;
         use crate::primitives::mlkem::MLKEM768_PUBLIC_KEY_LEN;
@@ -147,6 +154,7 @@ impl<'de> serde::Deserialize<'de> for MessagePublicKey {
 }
 
 /// SD-APKE ciphertext `((c1, cp), c2)`.
+#[cfg_attr(hax_backend_proverif, hax_lib::opaque)]
 #[derive(Debug, Clone)]
 pub struct MessageCiphertext {
     /// HPKE encapsulation output (`c1` in the spec)
@@ -264,6 +272,13 @@ pub(crate) fn deterministic_keygen(
 /// # Errors
 ///
 /// Returns an error if ML-KEM encapsulation or HPKE sealing fails.
+// ProVerif: SD-APKE.AuthEnc is modeled atomically (HPKE-AuthPsk = DH-AKEM sender
+// auth + ML-KEM PSK) by the symbolic primitive `sd_apke__authenc`. Fresh KEM
+// randomness is drawn inside the letfun, so `rng` is dropped.
+#[cfg_attr(
+    hax_backend_proverif,
+    hax_lib::proverif::replace_body("sd_apke__authenc(sk, pk, m, ad, info)")
+)]
 pub fn auth_enc<R: RngCore + CryptoRng>(
     rng: &mut R,
     sk: &MessagePrivateKey, // (skS1, skS2)
@@ -320,6 +335,13 @@ pub fn auth_enc<R: RngCore + CryptoRng>(
 /// # Errors
 ///
 /// Returns an error if ML-KEM decapsulation or HPKE opening fails.
+// ProVerif: partial inverse of `sd_apke__authenc`. Succeeds only for a ciphertext
+// produced by the matching sender `pk` and recipient `sk` (binds sender identity —
+// SD-APKE implicit authentication).
+#[cfg_attr(
+    hax_backend_proverif,
+    hax_lib::proverif::replace_body("sd_apke__authdec(sk, pk, ct, ad, info)")
+)]
 pub fn auth_dec(
     sk: &MessagePrivateKey, // (skR1, skR2)
     pk: &MessagePublicKey,  // (pkS1, pkS2)

@@ -1,0 +1,79 @@
+(*****************************************************************)
+(*  fetch.pv — privacy-preserving message fetching (the DH clue)   *)
+(*                                                               *)
+(*  encrypt_decrypt.rs: a submission carries a hint (X = g^x,      *)
+(*  Z = pk_R^x). The untrusted server, per fetch request, picks a  *)
+(*  fresh eph and returns (pmgdh = X^eph, enc_id = AEAD_mk(id))    *)
+(*  with mk = Z^eph. The recipient (fetch secret r_sk, pk_R =      *)
+(*  g^r_sk) recovers mk = pmgdh^r_sk and decrypts. A 3-party DH:   *)
+(*  mk = g^(x·r_sk·eph). Because Z = pk_R^x BLINDS pk_R, the        *)
+(*  server never learns the recipient.                             *)
+(*                                                               *)
+(*  Modeling note: hax's `crypto__dh_shared` (a 2-party op) cannot  *)
+(*  express the nested 3-party exponentiation, and ProVerif does    *)
+(*  not terminate on the general exp-commutativity equation here.   *)
+(*  So the clue is modeled with dedicated constructors whose single *)
+(*  correctness `reduc` captures exactly the recipient==server key   *)
+(*  agreement — deterministic for ProVerif. AEAD reuses cryptolib.  *)
+(*                                                               *)
+(*  This file: functional correctness + wrong-recipient secrecy.   *)
+(*  Recipient anonymity (unlinkability) is in fetch_unlink.pv.     *)
+(*****************************************************************)
+
+fun gen(bitstring): bitstring.               (* r_sk -> pk_R  = g^r_sk *)
+fun cluex(bitstring): bitstring.             (* x    -> X     = g^x     *)
+fun cluez(bitstring, bitstring): bitstring.  (* pk, x -> Z    = pk^x    *)
+fun srvp(bitstring, bitstring): bitstring.   (* X, eph -> pmgdh = X^eph  *)
+fun srvk(bitstring, bitstring): bitstring.   (* Z, eph -> mk (server side) = Z^eph *)
+(* Recipient recovers the server's mk from pmgdh + its fetch secret. This ONE rule
+   is the 3-party DH agreement: pmgdh^r_sk = Z^eph exactly when Z = (g^r_sk)^x. *)
+reduc forall r_sk: bitstring, x: bitstring, eph: bitstring;
+    reck(srvp(cluex(x), eph), r_sk) = srvk(cluez(gen(r_sk), x), eph).
+
+free MESSAGE_ID: bitstring [private].   (* the server's id for A's stored message *)
+event GotA(bitstring).   (* intended recipient recovered an id *)
+event GotB(bitstring).   (* a DIFFERENT recipient recovered an id *)
+
+(* Correctness: the intended recipient A recovers the ACTUAL message id (reachable). *)
+query event(GotA(MESSAGE_ID)).
+(* Wrong-recipient secrecy: B (message addressed to A) NEVER recovers A's message id. *)
+query event(GotB(MESSAGE_ID)).
+(* Message-id confidentiality: a network eavesdropper never learns it either. *)
+query attacker(MESSAGE_ID).
+
+(* One honest message stored for A. `MESSAGE_ID` is the server's id for THIS entry
+   (each stored entry has its own id; the attacker submitting other entries just gets
+   its own ids back — irrelevant to A's id). The server re-derives the fetch challenge
+   with a fresh per-request `eph`, so `!Serve` models repeated fetch requests. *)
+let Serve(bigX: bitstring, bigZ: bitstring) =
+    new eph: bitstring;
+    out(c, (srvp(bigX, eph), crypto__aead_enc(srvk(bigZ, eph), MESSAGE_ID, empty))).
+
+let RecipientA(r_sk: bitstring) =
+    in(c, ch: bitstring);
+    let (p: bitstring, e: bitstring) = ch in
+    let id = crypto__aead_dec(reck(p, r_sk), e, empty) in
+    event GotA(id).
+
+let RecipientB(r_sk: bitstring) =
+    in(c, ch: bitstring);
+    let (p: bitstring, e: bitstring) = ch in
+    let id = crypto__aead_dec(reck(p, r_sk), e, empty) in
+    event GotB(id).
+
+process
+    new r_sk_A: bitstring; new r_sk_B: bitstring;
+    let pk_A = gen(r_sk_A) in
+    let pk_B = gen(r_sk_B) in
+    out(c, pk_A); out(c, pk_B);
+    new x: bitstring;                     (* source's ephemeral for the hint *)
+    let bigX = cluex(x) in
+    let bigZ = cluez(pk_A, x) in
+    out(c, bigX); out(c, bigZ);           (* the hint (X, Z) is stored on the untrusted server *)
+    ( !Serve(bigX, bigZ) | RecipientA(r_sk_A) | RecipientB(r_sk_B) )
+
+(* EXPECTPV
+RESULT not event(GotA(MESSAGE_ID[])) is false.
+RESULT not event(GotB(MESSAGE_ID[])) is true.
+RESULT not attacker(MESSAGE_ID[]) is true.
+END *)

@@ -1,0 +1,84 @@
+(*****************************************************************)
+(*  enrollment.pv — M3: FPF -> Newsroom -> Journalist trust chain  *)
+(*                                                               *)
+(*  Trust model (api.rs handle_welcome / verify_long_term):       *)
+(*    - FPF signing key is the public trust anchor.               *)
+(*    - FPF signs the newsroom verifying key      (domain fpf-sig-nr)*)
+(*    - the newsroom signs each journalist vk      (domain nr-sig)  *)
+(*    - the journalist self-signs its long-term keys (domain j-sig-ltk)*)
+(*  A client accepts a journalist only after checking the whole   *)
+(*  chain. The Dolev-Yao attacker may mint its own journalist     *)
+(*  keys and inject forged views, but lacks the newsroom key.     *)
+(*                                                               *)
+(*  Signatures use the REAL extracted `sign`/`verify`; domain      *)
+(*  separation is modeled by signing/verifying the tagged message  *)
+(*  (TAG, msg) — mirroring the code's `len(tag)||tag||msg`         *)
+(*  preimage, with a distinct nullary TAG per domain.             *)
+(*                                                               *)
+(*  Property: ClientAcceptedJournalist(jvk) ==> the newsroom       *)
+(*  actually signed jvk  (no rogue journalist can be accepted).    *)
+(*****************************************************************)
+
+(* Distinct domain-separation tags (mirror sign.rs DomainTag impls). *)
+const TAG_FPF_NR: bitstring.   (* "fpf-sig-nr" *)
+const TAG_NR_J: bitstring.     (* "nr-sig"     *)
+const TAG_J_LTK: bitstring.    (* "j-sig-ltk"  *)
+
+event FpfSignedNewsroom(bitstring).        (* nr_vk *)
+event NewsroomSignedJournalist(bitstring). (* j_vk  *)
+event ClientAcceptedJournalist(bitstring). (* j_vk  *)
+
+(* Sign / verify in a domain, via the extracted primitives. `ver` yields unit
+   only for a genuine signature (forgery has no value -> the `let` blocks). *)
+letfun sig(sk: bitstring, tag: bitstring, msg: bitstring) =
+    securedrop_protocol_minimal__sign__Impl_10__sign(sk,
+        rust_primitives__hax__Tuple2__Tuple2(tag, msg)).
+letfun ver(vk: bitstring, tag: bitstring, msg: bitstring, s: bitstring) =
+    securedrop_protocol_minimal__sign__Impl_11__verify(vk,
+        rust_primitives__hax__Tuple2__Tuple2(tag, msg), s).
+
+(* Property (rogue journalist can't be accepted). *)
+query jvk: bitstring;
+    event(ClientAcceptedJournalist(jvk)) ==> event(NewsroomSignedJournalist(jvk)).
+
+(* Sanity: an honest journalist IS accepted (non-vacuous). *)
+query jvk: bitstring; event(ClientAcceptedJournalist(jvk)).
+
+(* Honest enrollment: the trusted newsroom mints an honest journalist, who
+   self-signs its long-term keys; the newsroom signs the journalist vk. *)
+let HonestEnrollment(nr_sk: bitstring) =
+    new j_sk: bitstring;
+    let j_vk = crypto__vk_of(j_sk) in
+    new ltk: bitstring;                          (* long-term key bytes (apke||fetch) *)
+    let selfsig = sig(j_sk, TAG_J_LTK, ltk) in
+    event NewsroomSignedJournalist(j_vk);
+    let nr_sig = sig(nr_sk, TAG_NR_J, j_vk) in
+    out(c, rust_primitives__hax__Tuple4__Tuple4(j_vk, ltk, selfsig, nr_sig)).
+
+(* Client: verify FPF's endorsement of the newsroom, then verify a journalist
+   long-term view against that newsroom (the api.rs verify_long_term checks). *)
+let Client(fpf_vk: bitstring) =
+    in(c, nr_vk: bitstring);
+    in(c, fpf_sig: bitstring);
+    let ok_nr = ver(fpf_vk, TAG_FPF_NR, nr_vk, fpf_sig) in
+    in(c, rust_primitives__hax__Tuple4__Tuple4(j_vk: bitstring, ltk: bitstring,
+                                               selfsig: bitstring, nr_sig: bitstring));
+    let ok_j  = ver(nr_vk, TAG_NR_J, j_vk, nr_sig) in       (* newsroom signed j_vk *)
+    let ok_lt = ver(j_vk, TAG_J_LTK, ltk, selfsig) in       (* journalist self-signed ltk *)
+    event ClientAcceptedJournalist(j_vk).
+
+process
+    new fpf_sk: bitstring;
+    let fpf_vk = crypto__vk_of(fpf_sk) in
+    out(c, fpf_vk);                              (* trust anchor is public *)
+    new nr_sk: bitstring;
+    let nr_vk = crypto__vk_of(nr_sk) in
+    event FpfSignedNewsroom(nr_vk);              (* FPF endorses THE honest newsroom *)
+    out(c, nr_vk);
+    out(c, sig(fpf_sk, TAG_FPF_NR, nr_vk));
+    ( !HonestEnrollment(nr_sk) | !Client(fpf_vk) )
+
+(* EXPECTPV
+RESULT event(ClientAcceptedJournalist(jvk)) ==> event(NewsroomSignedJournalist(jvk)) is true.
+RESULT not event(ClientAcceptedJournalist(jvk)) is false.
+END *)

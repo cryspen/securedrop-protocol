@@ -1,0 +1,48 @@
+(*****************************************************************)
+(*  sd_crypto.pvl — SecureDrop-specific symbolic crypto           *)
+(*                                                               *)
+(*  Composite primitives the generic cryptolib.pvl does not      *)
+(*  cover. Load AFTER primitives.pvl + cryptolib.pvl:            *)
+(*    proverif -lib primitives -lib cryptolib -lib sd_crypto \   *)
+(*             -lib missingdecl -lib lib  queries/<prop>.pv      *)
+(*                                                               *)
+(*  Uniform `bitstring` model (no `type` decls) so names resolve *)
+(*  directly against the extracted lib.pvl.                      *)
+(*****************************************************************)
+
+(*===============================================================*)
+(* SD-APKE — SecureDrop Authenticated PKE.                        *)
+(* HPKE(AuthPsk) = DH-AKEM (sender authentication) + ML-KEM PSK.  *)
+(* Modeled atomically: confidentiality + IMPLICIT SENDER AUTH.    *)
+(*                                                                *)
+(*   sd_apke__pk(sk)                 : APKE public key of sk       *)
+(*   sd_apke__authenc(skS,pkR,m,ad,info) -> ct                    *)
+(*   sd_apke__authdec(skR,pkS,ct,ad,info) -> m   (partial)        *)
+(*                                                                *)
+(* authdec yields m ONLY for a ct produced by the matching        *)
+(* sender skS (whose public key pkS = sd_apke__pk(skS)) and       *)
+(* recipient (whose public key was sd_apke__pk(skR)). The         *)
+(* ciphertext term carries skS as a subterm, so a recipient       *)
+(* holding skR + the public pkS can open it, but neither          *)
+(* confidentiality (needs skR) nor authenticity (needs skS to     *)
+(* forge) can be broken by the Dolev-Yao attacker.                *)
+(*===============================================================*)
+fun sd_apke__pk(bitstring): bitstring.
+fun sd_apke__authenc(bitstring, bitstring, bitstring, bitstring, bitstring): bitstring.
+   (* skS, pkR, m, ad, info -> ct *)
+reduc forall skS: bitstring, skR: bitstring, m: bitstring, ad: bitstring, info: bitstring;
+  sd_apke__authdec(skR, sd_apke__pk(skS),
+                   sd_apke__authenc(skS, sd_apke__pk(skR), m, ad, info),
+                   ad, info) = m.
+
+(*===============================================================*)
+(* SD-PKE — SecureDrop metadata PKE.                              *)
+(* HPKE(Base) over X-Wing. Confidentiality only (no sender auth). *)
+(*   sd_pke__pk(sk)          : metadata public key of sk          *)
+(*   sd_pke__enc(pkR, m) -> ct                                    *)
+(*   sd_pke__dec(skR, ct) -> m   (partial inverse)               *)
+(*===============================================================*)
+fun sd_pke__pk(bitstring): bitstring.
+fun sd_pke__enc(bitstring, bitstring): bitstring.      (* pkR, m -> ct *)
+reduc forall skR: bitstring, m: bitstring;
+  sd_pke__dec(skR, sd_pke__enc(sd_pke__pk(skR), m)) = m.

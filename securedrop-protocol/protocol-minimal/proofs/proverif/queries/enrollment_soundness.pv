@@ -1,0 +1,63 @@
+(*****************************************************************)
+(*  enrollment_soundness.pv — M3 sanity: the newsroom-signature    *)
+(*  check in the trust chain is LOAD-BEARING.                       *)
+(*                                                               *)
+(*  A BROKEN client that verifies only the journalist self-sig     *)
+(*  (skipping the newsroom's signature over the journalist vk)     *)
+(*  CAN be made to accept a rogue journalist that the newsroom     *)
+(*  never signed. So the correspondence below is EXPECTED FALSE —  *)
+(*  demonstrating that enrollment.pv's `is true` verdict is not     *)
+(*  vacuous, and that removing the nr-sig check reintroduces the    *)
+(*  rogue-journalist attack.                                        *)
+(*****************************************************************)
+
+const TAG_FPF_NR: bitstring.
+const TAG_NR_J: bitstring.
+const TAG_J_LTK: bitstring.
+
+event NewsroomSignedJournalist(bitstring).
+event BrokenClientAccepted(bitstring).
+
+letfun sig(sk: bitstring, tag: bitstring, msg: bitstring) =
+    securedrop_protocol_minimal__sign__Impl_10__sign(sk,
+        rust_primitives__hax__Tuple2__Tuple2(tag, msg)).
+letfun ver(vk: bitstring, tag: bitstring, msg: bitstring, s: bitstring) =
+    securedrop_protocol_minimal__sign__Impl_11__verify(vk,
+        rust_primitives__hax__Tuple2__Tuple2(tag, msg), s).
+
+(* EXPECTED FALSE: a rogue journalist (never newsroom-signed) is accepted. *)
+query jvk: bitstring;
+    event(BrokenClientAccepted(jvk)) ==> event(NewsroomSignedJournalist(jvk)).
+
+let HonestEnrollment(nr_sk: bitstring) =
+    new j_sk: bitstring;
+    let j_vk = crypto__vk_of(j_sk) in
+    new ltk: bitstring;
+    let selfsig = sig(j_sk, TAG_J_LTK, ltk) in
+    event NewsroomSignedJournalist(j_vk);
+    let nr_sig = sig(nr_sk, TAG_NR_J, j_vk) in
+    out(c, rust_primitives__hax__Tuple4__Tuple4(j_vk, ltk, selfsig, nr_sig)).
+
+(* Broken: skips the `ver(nr_vk, TAG_NR_J, j_vk, nr_sig)` check. *)
+let BrokenClient(fpf_vk: bitstring) =
+    in(c, nr_vk: bitstring);
+    in(c, fpf_sig: bitstring);
+    let ok_nr = ver(fpf_vk, TAG_FPF_NR, nr_vk, fpf_sig) in
+    in(c, rust_primitives__hax__Tuple4__Tuple4(j_vk: bitstring, ltk: bitstring,
+                                               selfsig: bitstring, nr_sig: bitstring));
+    let ok_lt = ver(j_vk, TAG_J_LTK, ltk, selfsig) in       (* ONLY the self-sig *)
+    event BrokenClientAccepted(j_vk).
+
+process
+    new fpf_sk: bitstring;
+    let fpf_vk = crypto__vk_of(fpf_sk) in
+    out(c, fpf_vk);
+    new nr_sk: bitstring;
+    let nr_vk = crypto__vk_of(nr_sk) in
+    out(c, nr_vk);
+    out(c, sig(fpf_sk, TAG_FPF_NR, nr_vk));
+    ( !HonestEnrollment(nr_sk) | !BrokenClient(fpf_vk) )
+
+(* EXPECTPV
+RESULT event(BrokenClientAccepted(jvk)) ==> event(NewsroomSignedJournalist(jvk)) is false.
+END *)

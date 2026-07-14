@@ -34,13 +34,17 @@ use crate::primitives::xwing::{
 pub(crate) const LEN_METADATA_CIPHERTEXT: usize = 1232;
 
 /// The recipient's metadata public key (`pk_R^PKE` in the spec).
+// ProVerif: atomic public key `sd_pke__pk(sk)` (see handwritten/sd_crypto.pvl).
+#[cfg_attr(hax_backend_proverif, hax_lib::opaque)]
 #[derive(Debug, Clone)]
 pub struct MetadataPublicKey(pub(crate) XWingPublicKey);
 
 /// The recipient's metadata private key (`sk_R^PKE` in the spec).
+#[cfg_attr(hax_backend_proverif, hax_lib::opaque)]
 pub struct MetadataPrivateKey(pub(crate) XWingPrivateKey);
 
 /// A `(MetadataPrivateKey, MetadataPublicKey)` SD-PKE keypair.
+#[cfg_attr(hax_backend_proverif, hax_lib::opaque)]
 pub struct MetadataKeyPair {
     sk: MetadataPrivateKey,
     pk: MetadataPublicKey,
@@ -81,6 +85,7 @@ impl MetadataKeyPair {
 
 /// SD-PKE ciphertext `(c, c')`: X-Wing encapsulation `c` together with HPKE
 /// ciphertext `c'`.
+#[cfg_attr(hax_backend_proverif, hax_lib::opaque)]
 #[derive(Debug, Clone)]
 pub struct MetadataCiphertext {
     /// HPKE encapsulation output (`c` in the spec)
@@ -226,6 +231,12 @@ impl MetadataPrivateKey {
 /// SD-PKE.Enc: encrypt message `m` to recipient key `pk_r`, returning `(c, c')`.
 ///
 /// `m` is the sender's long-term APKE public key, which must be serializable.
+// ProVerif: SD-PKE (HPKE-Base over X-Wing) modeled as a public-key encryption
+// primitive `sd_pke__enc` (confidentiality only; no sender auth).
+#[cfg_attr(
+    hax_backend_proverif,
+    hax_lib::proverif::replace_body("sd_pke__enc(pk_r, m)")
+)]
 pub(crate) fn encrypt(
     pk_r: &MetadataPublicKey,
     m: &MessagePublicKey,
@@ -260,6 +271,10 @@ pub(crate) fn encrypt(
 /// # Errors
 ///
 /// Returns an error if HPKE decryption fails.
+#[cfg_attr(
+    hax_backend_proverif,
+    hax_lib::proverif::replace_body("sd_pke__dec(sk_r, ct)")
+)]
 pub fn decrypt(
     sk_r: &MetadataPrivateKey,
     ct: &MetadataCiphertext,
