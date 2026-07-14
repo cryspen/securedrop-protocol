@@ -17,18 +17,75 @@ Result: **13/13 properties verified.**
 
 ---
 
-## 1. How it works (one paragraph)
+## 1. What is translated to ProVerif, and what is assumed
 
-The hax ProVerif backend lifts the crate's **actual Rust functions** into a ProVerif
-model (`extraction/lib.pvl`). Cryptographic leaves are redirected to a shared symbolic
-crypto library via source annotations gated on `cfg(hax_backend_proverif)` (invisible to
-normal builds, `cargo test`, and F\* extraction). Hand-written ProVerif harnesses
-(`queries/*.pv`) instantiate honest participants, an active network attacker, and the
-security queries, calling the generated functions. ProVerif then discharges each query.
+**Mechanism.** The hax ProVerif backend translates the crate's **actual Rust functions**
+into a ProVerif model (`extraction/lib.pvl`). At the bottom, cryptographic and
+serialization "leaf" functions are redirected to a symbolic crypto library (via source
+annotations gated on `cfg(hax_backend_proverif)`, invisible to normal builds / `cargo
+test` / F\* extraction). Hand-written harnesses (`queries/*.pv`) then instantiate honest
+participants and an active network attacker that drive those translated functions, and
+ProVerif discharges each security query.
+
+So the analysis has three layers — **only the first is *verified*; the other two are
+*assumed*:**
+
+**① Translated Rust — the verified protocol logic.** The end-to-end message flow and the
+signature construction are translated from the real Rust, so their control/data flow *is*
+what ProVerif checks — which key feeds which operation, the associated-data / `info`
+binding, the envelope assembly, the trial-decrypt dispatch, the signing preimage:
+- `encrypt_decrypt::encrypt` — submission/reply orchestration.
+- `encrypt_decrypt::decrypt_with_sender` — receive orchestration (trial-decrypt → recover
+  sender key from metadata → authenticated-decrypt).
+- `sign` / `verify` / `tagged_preimage` — the domain-separated signing preimage.
+
+**② Idealized cryptography — assumed perfect (standard for symbolic analysis).** Every
+cryptographic operation is replaced by a perfect Dolev–Yao abstraction; ProVerif never
+reasons about the primitive's internals. This covers the true leaves (Ed25519, X25519)
+**and, in the current model, more than the leaves**: the SD-APKE and SD-PKE constructions
+(`auth_enc`/`auth_dec`, `metadata::encrypt`/`decrypt`) are modeled **atomically** rather
+than decomposed into ML-KEM ⊕ DH-AKEM ⊕ HPKE, and the fetch DH clue uses an idealized
+algebra. Serialization is modeled as **identity** (byte layout unverified), and key
+generation / passphrase derivation is **not translated at all**.
+
+**③ Hand-written model — assumed faithful.** The honest-participant key model, the roles
+and events, the security queries themselves, and the enrollment verification composition
+(`api::verify_long_term`, which hax cannot extract) are hand-written ProVerif, trusted to
+model the protocol correctly.
+
+The precise, itemized breakdown is in **§5** (fidelity + assumptions); the trust base is
+in **§4**. In short: **the protocol *composition* is verified; the crypto *primitives* and
+the SD-APKE/SD-PKE/fetch *constructions* are assumed.** Lowering the ② boundary so only
+true leaves are idealized is in-progress (§5a, `PLAN.md`).
 
 ---
 
-## 2. Verified properties (13 RESULT lines)
+## 2. Verified properties
+
+At a high level, the analysis targets the security goals a SecureDrop-style system needs,
+against an active network attacker and an untrusted server (§3):
+
+- **Message confidentiality.** A source's submission — and a journalist's reply — remains
+  secret; neither the network attacker nor the untrusted server learns the message.
+- **Message authentication (implicit, via SD-APKE).** If a journalist accepts a message as
+  coming from a given source, that source really sent it; symmetrically, a source that
+  accepts a reply can be sure it came from the journalist. An attacker cannot forge or
+  tamper with a message under an honest party's identity.
+- **Enrollment trust chain — no rogue journalists.** A client accepts a journalist's keys
+  only when the chain of trust holds: FPF (the root anchor) signed the newsroom, and the
+  newsroom signed that journalist. An attacker who mints its own journalist keys and
+  injects a forged enrollment cannot get a client to accept it. A companion *soundness*
+  check demonstrates the newsroom-signature step is load-bearing (removing it reintroduces
+  the attack — so the guarantee is not vacuous).
+- **Privacy-preserving fetch.** Only the intended recipient can recover a message's id from
+  the server's fetch challenges (a wrong recipient and a network eavesdropper cannot); and
+  the untrusted server cannot tell **which recipient** a stored message is addressed to —
+  *recipient anonymity / unlinkability*.
+- **Non-vacuity (sanity).** For each authentication/secrecy goal, the honest run is shown to
+  actually reach the relevant event, so the correspondence results above are not vacuously
+  true.
+
+Each row below is one ProVerif `RESULT` line (all 13 currently pass — `make proverif-check`):
 
 | Layer | File | Property | ProVerif verdict |
 |---|---|---|---|
