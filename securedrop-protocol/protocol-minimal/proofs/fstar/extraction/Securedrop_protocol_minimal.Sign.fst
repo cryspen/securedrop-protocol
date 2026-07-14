@@ -423,6 +423,9 @@ let impl_SigningKey__new
     <:
     (v_R & Core_models.Result.t_Result t_SigningKey Anyhow.t_Error)
 
+let impl_SigningKey__as_bytes (self: t_SigningKey) : t_Array u8 (mk_usize 32) =
+  impl_SigningSecretKey__as_bytes self.f_sk
+
 /// Sign `msg` in domain `D`, returning a `Signature<D>`.
 /// The actual preimage is `len(tag) || tag || msg` where `tag = D::TAG`.
 let impl_SigningKey__sign
@@ -432,17 +435,15 @@ let impl_SigningKey__sign
       (msg: t_Slice u8)
     : t_Signature v_D =
   let preimage:Alloc.Vec.t_Vec u8 Alloc.Alloc.t_Global = tagged_preimage #v_D msg in
+  let sk:t_Array u8 (mk_usize 32) = impl_SigningKey__as_bytes self in
   let bytes:t_Array u8 (mk_usize 64) =
     Securedrop_protocol_minimal.Primitives.Provider.Ed25519.sign (Alloc.Vec.impl_1__as_slice preimage
 
         <:
         t_Slice u8)
-      (impl_SigningSecretKey__as_bytes self.f_sk <: t_Array u8 (mk_usize 32))
+      sk
   in
   impl_7__from_bytes #v_D bytes
-
-let impl_SigningKey__as_bytes (self: t_SigningKey) : t_Array u8 (mk_usize 32) =
-  impl_SigningSecretKey__as_bytes self.f_sk
 
 let impl_SigningKey__from_seed (seed: t_Array u8 (mk_usize 32)) : t_SigningKey =
   let pk:t_Array u8 (mk_usize 32) = Rust_primitives.Hax.repeat (mk_u8 0) (mk_usize 32) in
@@ -466,6 +467,7 @@ let impl_VerifyingKey__verify
       (sig: t_Signature v_D)
     : Core_models.Result.t_Result Prims.unit Anyhow.t_Error =
   let preimage:Alloc.Vec.t_Vec u8 Alloc.Alloc.t_Global = tagged_preimage #v_D msg in
+  let sig_bytes:t_Array u8 (mk_usize 64) = impl_7__as_bytes #v_D sig in
   Core_models.Result.impl__map_err #Prims.unit
     #Anyhow.t_Error
     #Anyhow.t_Error
@@ -475,7 +477,7 @@ let impl_VerifyingKey__verify
           <:
           t_Slice u8)
         (impl_VerifyingKey__as_bytes self <: t_Array u8 (mk_usize 32))
-        sig.f_bytes
+        sig_bytes
       <:
       Core_models.Result.t_Result Prims.unit Anyhow.t_Error)
     (fun temp_0_ ->

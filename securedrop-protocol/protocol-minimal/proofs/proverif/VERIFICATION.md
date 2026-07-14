@@ -4,7 +4,10 @@ Status report for the hax → ProVerif symbolic security analysis of
 `securedrop-protocol-minimal`. This is a **symbolic (Dolev–Yao) analysis**: it proves
 protocol-level security properties assuming cryptographic primitives are perfect. It
 complements — and is independent of — the F\* track (`proofs/fstar/`, panic-freedom /
-functional correctness), which is untouched by this work.
+functional correctness). The F\* extraction is essentially untouched: one
+semantically-equivalent refactor to `sign.rs` (to keep the opaque signing key free of
+field access) changed a single extracted module (`Sign.fst`, re-committed, still verifies);
+all other F\* modules are byte-identical.
 
 - **Run it:** `make proverif-check` (engine-free — needs only a `proverif` binary).
 - **Re-extract from Rust:** `make proverif-extract` (needs the `hax-proverif` opam switch).
@@ -282,8 +285,9 @@ To regenerate `lib.pvl` from the Rust source rather than trust the committed sna
 
 - `cargo build` and `cargo test` are unaffected (all annotations are
   `cfg(hax_backend_proverif)`-gated).
-- **`proofs/fstar/` is byte-identical** — the F\* extraction and verification pipeline is
-  untouched.
+- **`proofs/fstar/` is byte-identical except `Sign.fst`** — the one semantically-equivalent
+  `sign.rs` refactor re-extracted that single module (re-committed; still type-checks and
+  verifies). Every other F\* module and the verification pipeline are unchanged.
 - Source changes are ~80 cfg-gated lines across `message.rs`, `metadata.rs`, `sign.rs`,
   `ciphertext.rs`, `keys.rs`, `primitives/x25519.rs`, plus the workspace `Cargo.toml`
   lint and the crate `Makefile` targets. Everything else is new files under
