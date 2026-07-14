@@ -13,6 +13,14 @@
 (*  the metadata key.                                             *)
 (*****************************************************************)
 
+(* `DomainTag::tag()` is generic over the domain type `D`; the ProVerif backend erases
+   the type parameter (it does not monomorphize), so the extracted `tagged_preimage`
+   calls `DomainTag__tag(Tuple0)` — one opaque tag for ALL four domains. The signing
+   preimage composition (`len‖tag‖msg`) and the Ed25519 leaf are extracted; but domain
+   SEPARATION (fpf-sig-nr / nr-sig / j-sig-ltk / j-sig-eph) is consequently modeled
+   harness-side, by signing/verifying a per-domain-tagged message (see enrollment.pv). *)
+fun securedrop_protocol_minimal__sign__DomainTag__tag(bitstring): bitstring.
+
 (* Secret user: long-term/ephemeral secret keys. *)
 fun sd_secret(bitstring, bitstring, bitstring): bitstring [data].   (* skApke, skFetch, skMeta *)
 reduc forall a: bitstring, f: bitstring, m: bitstring;

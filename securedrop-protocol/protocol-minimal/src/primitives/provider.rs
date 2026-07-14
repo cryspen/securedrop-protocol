@@ -40,13 +40,23 @@ pub mod ed25519 {
     }
 
     /// Sign `payload` with Ed25519 secret key bytes.
-    #[cfg_attr(hax, hax_lib::opaque)]
+    // ProVerif LEAF: EUF-CMA signature. (F* keeps this opaque.)
+    #[cfg_attr(all(hax, not(hax_backend_proverif)), hax_lib::opaque)]
+    #[cfg_attr(
+        hax_backend_proverif,
+        hax_lib::proverif::replace_body("crypto__sign(private_key, payload)")
+    )]
     pub(crate) fn sign(payload: &[u8], private_key: &[u8; 32]) -> [u8; 64] {
         libcrux_ed25519::sign(payload, private_key).expect("Ed25519 signing is infallible")
     }
 
     /// Verify an Ed25519 `signature` over `payload` with verifying key bytes.
-    #[cfg_attr(hax, hax_lib::opaque)]
+    // ProVerif LEAF: reduces to unit only for a genuine signature.
+    #[cfg_attr(all(hax, not(hax_backend_proverif)), hax_lib::opaque)]
+    #[cfg_attr(
+        hax_backend_proverif,
+        hax_lib::proverif::replace_body("crypto__sig_verify(public_key, payload, signature)")
+    )]
     pub(crate) fn verify(
         payload: &[u8],
         public_key: &[u8; 32],

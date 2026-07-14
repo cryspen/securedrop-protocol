@@ -119,6 +119,8 @@ impl<D: DomainTag> Eq for Signature<D> {}
 
 impl<D: DomainTag> Signature<D> {
     /// Reconstruct a [`Signature`] from its serialization.
+    // ProVerif serialization leaf: signature is atomic (opaque), so this is identity.
+    #[cfg_attr(hax_backend_proverif, hax_lib::proverif::replace_body("bytes"))]
     pub fn from_bytes(bytes: [u8; 64]) -> Self {
         Self {
             bytes,
@@ -127,6 +129,7 @@ impl<D: DomainTag> Signature<D> {
     }
 
     /// The byte serialization of this signature.
+    #[cfg_attr(hax_backend_proverif, hax_lib::proverif::replace_body("self"))]
     pub fn as_bytes(&self) -> [u8; 64] {
         self.bytes
     }
@@ -176,6 +179,8 @@ pub struct VerifyingKey([u8; KEY_LEN_ED25519]);
 pub(crate) struct SigningSecretKey([u8; KEY_LEN_ED25519]);
 
 impl VerifyingKey {
+    // ProVerif serialization leaf: the verifying key is atomic (opaque) -> identity.
+    #[cfg_attr(hax_backend_proverif, hax_lib::proverif::replace_body("self"))]
     pub(crate) fn as_bytes(&self) -> &[u8; KEY_LEN_ED25519] {
         &self.0
     }
@@ -236,19 +241,20 @@ impl SigningKey {
     /// Sign `msg` in domain `D`, returning a `Signature<D>`.
     ///
     /// The actual preimage is `len(tag) || tag || msg` where `tag = D::TAG`.
-    // ProVerif: EUF-CMA signature `crypto__sign(sk, msg)`. NOTE (M3): the type-level
-    // domain separator `D` is not yet reflected in the symbolic term; add the tag to
-    // the signed message when modeling the enrollment trust chain.
-    #[cfg_attr(
-        hax_backend_proverif,
-        hax_lib::proverif::replace_body("crypto__sign(self, msg)")
-    )]
+    // ProVerif: EXTRACTED. The domain-separated preimage (`tagged_preimage`) and the
+    // Ed25519 leaf (`provider::ed25519::sign`) are the only abstracted parts, so domain
+    // separation is now part of the verified model rather than the harness.
     pub fn sign<D: DomainTag>(&self, msg: &[u8]) -> Signature<D> {
         let preimage = tagged_preimage::<D>(msg);
-        let bytes = provider::ed25519::sign(&preimage, self.sk.as_bytes());
+        // `self.as_bytes()` (not `self.sk.as_bytes()`) so the opaque signing key needs
+        // no field access in the ProVerif model.
+        let sk = self.as_bytes();
+        let bytes = provider::ed25519::sign(&preimage, &sk);
         Signature::from_bytes(bytes)
     }
 
+    // ProVerif serialization leaf: the signing key is atomic (opaque) -> identity.
+    #[cfg_attr(hax_backend_proverif, hax_lib::proverif::replace_body("self"))]
     pub(crate) fn as_bytes(&self) -> [u8; 32] {
         *self.sk.as_bytes()
     }
@@ -272,15 +278,13 @@ impl VerifyingKey {
     /// Verify `sig` over `msg`. The domain is determined by the type of `sig`.
     ///
     /// Returns an error if the signature is invalid.
-    // ProVerif: `crypto__sig_verify(vk, msg, sig)` reduces to unit only for a genuine
-    // signature under the matching key (forgery has no value -> propagates as `Err`).
-    #[cfg_attr(
-        hax_backend_proverif,
-        hax_lib::proverif::replace_body("crypto__sig_verify(self, msg, sig)")
-    )]
+    // ProVerif: EXTRACTED (same domain-separated preimage as `sign`); only the Ed25519
+    // leaf (`provider::ed25519::verify`) is abstracted.
     pub fn verify<D: DomainTag>(&self, msg: &[u8], sig: &Signature<D>) -> Result<(), Error> {
         let preimage = tagged_preimage::<D>(msg);
-        provider::ed25519::verify(&preimage, self.as_bytes(), &sig.bytes)
+        // `sig.as_bytes()` (not `sig.bytes`) so the opaque signature needs no field access.
+        let sig_bytes = sig.as_bytes();
+        provider::ed25519::verify(&preimage, self.as_bytes(), &sig_bytes)
             .map_err(|_| anyhow::anyhow!("Signature verification failed"))
     }
 }

@@ -122,19 +122,41 @@ Given 4a–4c, ProVerif proves the §2 properties hold against the §3 attacker.
 
 ## 5. Modeling assumptions & caveats
 
-### 5a. Fidelity: what is extracted vs. hand-modeled
+### 5a. Fidelity: what is extracted vs. abstracted vs. harness-modeled
 
-**Extracted from the real Rust** (the substance of the analysis):
-`message::{auth_enc,auth_dec}`, `metadata::{encrypt,decrypt}`, `sign`/`verify`,
-`encrypt_decrypt::encrypt`, **`encrypt_decrypt::decrypt_with_sender`** (the full receive:
-trial-decrypt over the key-bundle list → recover the sender key from metadata →
-`auth_dec`), the x25519 DH operations, `Plaintext` (de)serialization, and the key /
-ciphertext / envelope types.
+Three distinct categories — be precise about which is which:
 
-**Hand-modeled in the harness** (participants and scenarios, not crypto/protocol logic):
-the honest-user key model and trait accessors; the role processes, events, and queries;
-the enrollment **process wiring** and domain-separation tags (the `sign`/`verify` calls
-themselves are extracted); and — the one substantive departure — the **fetch DH clue**.
+**(i) Extracted as real composition** — the actual Rust control/data flow becomes the
+ProVerif model; only the leaves it calls are abstracted. This is the verified
+protocol/orchestration logic:
+- `encrypt_decrypt::encrypt` — the submission/reply orchestration (which key goes to
+  which operation, the `NR_ID` associated data, the recipient fetch-pubkey `info`, the
+  `(X,Z)` fetch-hint construction, the `Envelope` assembly).
+- `encrypt_decrypt::decrypt_with_sender` — the receive orchestration (trial-decrypt over
+  the key-bundle list → recover the sender key from the metadata ciphertext → `auth_dec`
+  with the recovered key + matching AD/info).
+- `sign`/`verify` + `tagged_preimage` — the domain-separated signing-preimage composition
+  `len‖tag‖msg` (only the Ed25519 op is a leaf).
+
+**(ii) Abstracted to a symbolic primitive** (the "leaf" boundary, via `replace_body` /
+opaque). This is idealized, not verified — as is standard and necessary for symbolic
+analysis:
+- **Crypto leaves:** `message::{auth_enc,auth_dec}` (SD-APKE modeled **atomically** —
+  §5b.1), `metadata::{encrypt,decrypt}` (SD-PKE atomically), the Ed25519 `provider` op,
+  the x25519 DH ops, and (in fetch) the DH clue algebra (§5b.2).
+- **Serialization leaves:** `Plaintext` / `MessagePublicKey` (de)serialization → identity;
+  key / ciphertext / signature / envelope types are opaque bitstrings.
+
+**(iii) Not extracted / harness-modeled:** key generation & passphrase derivation
+(`opaque`); `api::verify_long_term`/`verify_ephemeral` (blanket `impl<T>` that hax can't
+extract — the harness re-expresses the composition but drives the **real extracted**
+`verify`); the honest-user key model and trait accessors; the roles, events, and queries;
+the enrollment process wiring + per-domain tags (§5b.3); the fetch DH clue (§5b.2).
+
+**In progress:** pushing the leaf boundary further down — extracting `auth_enc`/`auth_dec`
+(SD-APKE) and `metadata` (SD-PKE) so only ML-KEM / HPKE / X-Wing remain leaves. A probe
+confirms these compositions extract with ~10 clean leaves; completing it requires
+modeling the HPKE-AuthPsk + ML-KEM leaves and a hybrid-key harness (`PLAN.md`).
 
 ### 5b. Specific assumptions
 
@@ -173,10 +195,13 @@ themselves are extracted); and — the one substantive departure — the **fetch
    stronger and less-audited assumption than the standard `cryptolib` primitives used for
    the message and enrollment layers. The clue algebra is *trusted*, not derived from
    `compute_fetch_challenges`/`solve_fetch_challenges` (which are also not extracted).
-3. **Domain-separated signatures are modeled harness-side.** The four Ed25519 domains
-   (`fpf-sig-nr`, `nr-sig`, `j-sig-ltk`, `j-sig-eph`) are represented by signing/verifying
-   a tagged message `(TAG, msg)`, mirroring the code's `len(tag)‖tag‖msg` preimage, rather
-   than deriving the tags from the `DomainTag` impls.
+3. **Domain-separated signatures: preimage extracted, tags harness-side.** `sign`/`verify`
+   and `tagged_preimage` are extracted (the `len‖tag‖msg` preimage is real, only the
+   Ed25519 op is a leaf). But the ProVerif backend **erases the type parameter `D`** of the
+   generic `DomainTag::tag()` (it does not monomorphize), so all four domains
+   (`fpf-sig-nr`/`nr-sig`/`j-sig-ltk`/`j-sig-eph`) collapse to one opaque tag in the
+   extracted model. Domain **separation** is therefore restored harness-side, by signing/
+   verifying a per-domain-tagged message `(TAG, msg)` on top of the extracted preimage.
 4. **Serialization is abstracted to identity** for the atomic-key/plaintext types
    (`MessagePublicKey::from_bytes`, `Plaintext::{to,from}_bytes`): the byte layout is not
    modeled; round-trip is exact. Length/format-confusion attacks are therefore out of

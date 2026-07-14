@@ -171,17 +171,66 @@ letfun securedrop_protocol_minimal__ciphertext__Impl_1__from_bytes(pt_bytes: bit
 
 
 
+(* src: protocol-minimal/src/primitives/provider.rs:47 securedrop_protocol_minimal__primitives__provider__ed25519__sign *)
+(*  Sign `payload` with Ed25519 secret key bytes. *)
+letfun securedrop_protocol_minimal__primitives__provider__ed25519__sign(
+  payload: bitstring,
+  private_key: bitstring
+) = crypto__sign(private_key, payload).
+(* src: protocol-minimal/src/primitives/provider.rs:58 securedrop_protocol_minimal__primitives__provider__ed25519__verify *)
+(*  Verify an Ed25519 `signature` over `payload` with verifying key bytes. *)
+letfun securedrop_protocol_minimal__primitives__provider__ed25519__verify(
+  payload: bitstring,
+  public_key: bitstring,
+  signature: bitstring
+) = crypto__sig_verify(public_key, payload, signature).
 
 
+(* src: protocol-minimal/src/sign.rs:123 securedrop_protocol_minimal__sign__Impl_7__from_bytes *)
+(*  Reconstruct a [`Signature`] from its serialization. *)
+letfun securedrop_protocol_minimal__sign__Impl_7__from_bytes(bytes: bitstring) = bytes.
+(* src: protocol-minimal/src/sign.rs:132 securedrop_protocol_minimal__sign__Impl_7__as_bytes *)
+(*  The byte serialization of this signature. *)
+letfun securedrop_protocol_minimal__sign__Impl_7__as_bytes(self: bitstring) = self.
+(* src: protocol-minimal/src/sign.rs:157 securedrop_protocol_minimal__sign__tagged_preimage *)
+(*  Construct the tagged signing preimage: `len(tag) || tag || msg`. *)
+letfun securedrop_protocol_minimal__sign__tagged_preimage(msg: bitstring) =
+  let tag = securedrop_protocol_minimal__sign__DomainTag__tag(
+    rust_primitives__hax__Tuple0__Tuple0
+  ) in
+  alloc__vec__Impl_2__extend_from_slice(
+    alloc__vec__Impl_2__extend_from_slice(
+      alloc__vec__Impl_1__push(
+        alloc__vec__Impl__with_capacity(
+          rust_primitives__hax__machine_int__add(
+            rust_primitives__hax__machine_int__add(nat_lit(1), core__slice__Impl__len(tag)),
+            core__slice__Impl__len(msg)
+          )
+        ),
+        core__slice__Impl__len(tag)
+      ),
+      tag
+    ),
+    msg
+  ).
 
+(* src: protocol-minimal/src/sign.rs:183 securedrop_protocol_minimal__sign__Impl_8__as_bytes *)
+letfun securedrop_protocol_minimal__sign__Impl_8__as_bytes(self: bitstring) = self.
 
-(* src: protocol-minimal/src/sign.rs:244 securedrop_protocol_minimal__sign__Impl_10__sign *)
+(* src: protocol-minimal/src/sign.rs:257 securedrop_protocol_minimal__sign__Impl_10__as_bytes *)
+letfun securedrop_protocol_minimal__sign__Impl_10__as_bytes(self: bitstring) = self.
+(* src: protocol-minimal/src/sign.rs:247 securedrop_protocol_minimal__sign__Impl_10__sign *)
 (*  Sign `msg` in domain `D`, returning a `Signature<D>`. *)
 (* *)
 (*  The actual preimage is `len(tag) || tag || msg` where `tag = D::TAG`. *)
 letfun securedrop_protocol_minimal__sign__Impl_10__sign(self: bitstring, msg: bitstring) =
-  crypto__sign(self, msg).
-(* src: protocol-minimal/src/sign.rs:279 securedrop_protocol_minimal__sign__Impl_11__verify *)
+  securedrop_protocol_minimal__sign__Impl_7__from_bytes(
+    securedrop_protocol_minimal__primitives__provider__ed25519__sign(
+      securedrop_protocol_minimal__sign__tagged_preimage(msg),
+      securedrop_protocol_minimal__sign__Impl_10__as_bytes(self)
+    )
+  ).
+(* src: protocol-minimal/src/sign.rs:283 securedrop_protocol_minimal__sign__Impl_11__verify *)
 (*  Verify `sig` over `msg`. The domain is determined by the type of `sig`. *)
 (* *)
 (*  Returns an error if the signature is invalid. *)
@@ -189,7 +238,12 @@ letfun securedrop_protocol_minimal__sign__Impl_11__verify(
   self: bitstring,
   msg: bitstring,
   sig: bitstring
-) = crypto__sig_verify(self, msg, sig).
+) =
+  securedrop_protocol_minimal__primitives__provider__ed25519__verify(
+    securedrop_protocol_minimal__sign__tagged_preimage(msg),
+    securedrop_protocol_minimal__sign__Impl_8__as_bytes(self),
+    securedrop_protocol_minimal__sign__Impl_7__as_bytes(sig)
+  ).
 (* src: protocol-minimal/src/encrypt_decrypt.rs:16 securedrop_protocol_minimal__encrypt_decrypt__NR_ID *)
 const securedrop_protocol_minimal__encrypt_decrypt__NR_ID: bitstring.
 (* src: protocol-minimal/src/encrypt_decrypt.rs:25 securedrop_protocol_minimal__encrypt_decrypt__encrypt *)

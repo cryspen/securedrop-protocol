@@ -344,7 +344,26 @@ Engine discovery: prefer the `hax-proverif` opam switch; honor `HAX_PROVERIF_DIR
   `missingdecl` filter (also drops names defined by the vendored libs, e.g. reduc-defined
   `Tuple2__0/1`). `missingdecl` stays clean; suite still **13/13**. The backend auto-unrolls
   the trial-decrypt loop (fixed bound 3; a single-bundle journalist uses the first iteration).
-- HPKE-AuthPsk decomposition; migrate `replace_body`→`pv_model` when the tracing backend lands.
+### Lowering the leaf boundary (extract more, abstract only leaf crypto + serialization)
+Goal: only abstract true leaf crypto (HPKE, ML-KEM, X-Wing, Ed25519, X25519, ChaCha20,
+HKDF) and serialization; extract the compositions above them.
+- **`sign`/`verify` + `tagged_preimage`. ✅ DONE (2026-07-14).** Leaf moved to
+  `provider::ed25519::{sign,verify}` (`crypto__sign`/`crypto__sig_verify`); the
+  domain-separated preimage composition is now extracted real Rust. Caveat: the backend
+  erases the generic `DomainTag`'s `D`, collapsing the four domains to one tag, so domain
+  *separation* stays harness-side (VERIFICATION.md §5b.3). Suite unchanged (13/13).
+- **SD-APKE `auth_enc`/`auth_dec` (☐).** Probe confirmed the composition (ML-KEM encaps →
+  `c2‖info` → HPKE-AuthPsk seal → ciphertext assembly) extracts with ~10 clean leaves
+  (`hpke_rs__Impl_7__{new,seal,open}` + config consts, `libcrux…Kem__{encaps,decaps}`,
+  `rand…fill_bytes`). Completing it needs: (a) define those HPKE-AuthPsk + ML-KEM leaves in
+  the crypto model (Option-wrapped psk/sender-sk, config-keyed, sender-auth reduc);
+  (b) un-opaque `MessagePublicKey`/`PrivateKey`/`MessageCiphertext`; (c) re-model the
+  harness with hybrid (DH-AKEM ⊕ ML-KEM) keys — ripples through submission/reply/receiver.
+  Risk: HPKE-AuthPsk leaf may stress ProVerif termination. Highest value.
+- **SD-PKE `metadata::{encrypt,decrypt}` (☐).** Same HPKE leaf (Base mode, no PSK/sender).
+- **`api::verify_long_term`/`verify_ephemeral` (☐).** Blocked by the blanket `impl<T> Api
+  for T` that hax can't extract; needs a refactor to a concrete/free fn.
+- migrate `replace_body`→`pv_model` when the tracing backend lands.
 
 ### FETCH-NOTES (the one modeling departure)
 Every other property drives the **extracted** Rust. The fetch mechanism is a **3-party DH
