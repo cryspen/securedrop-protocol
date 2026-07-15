@@ -5,6 +5,11 @@ Mirrors the SPQR / Mandrake flagship setups. Subcommands:
 
   extract-proverif   `cargo hax into -i '<targets>' proverif` -> extraction/lib.pvl
                      (injects the dev hax-lib via `cargo --config`; restores Cargo.lock)
+  extract-lean       `cargo hax into aeneas-lean` (charon + aeneas) -> a Lean
+                     project under ../aeneas-lean/ for the crypto core. Needs a hax
+                     checkout w/ cryspen/hax#2069 + #2071 (HAX_LEAN_DIR, default ~/hax):
+                     uses its cargo-hax and injects its hax-lib via a temporary
+                     [patch.crates-io] (Cargo.toml/lock restored afterwards).
   verify-proverif    run ProVerif on queries/*.pv, print RESULT lines
   check-proverif     run ProVerif and assert each query's (* EXPECTPV ... END *) block
                      `check-proverif update` regenerates those blocks
@@ -30,6 +35,35 @@ HANDWRITTEN = os.path.join(HERE, "handwritten")
 VENDORED = os.path.join(HERE, "lib")   # vendored primitives.pvl / cryptolib.pvl
 QUERIES = os.path.join(HERE, "queries")
 LIB_SHA = os.path.join(GEN, "lib.pvl.sha256")
+
+# Aeneas/Lean lane. hax's aeneas-lean backend (charon + aeneas) writes a whole Lean
+# project under <crate>/proofs/aeneas-lean/. Two hax changes are needed and injected at
+# extraction time (pending upstream), so the committed manifest stays on crates.io
+# hax-lib 0.3.7:
+#   * cryspen/hax#2069 (cargo-hax): target-side `--cfg hax` so cfg(hax)-gated deps
+#     (libcrux et al.) compile under charon.
+#   * cryspen/hax#2071 (hax-lib + cargo-hax): `hax_lib::opaque`/`exclude` emit charon's
+#     native attributes, so `#[cfg_attr(hax_backend_lean, hax_lib::opaque)]` markers work.
+# HAX_LEAN_DIR (default ~/hax) is a hax checkout carrying both: its `target/{release,
+# debug}/cargo-hax` is used, and its hax-lib is injected via a temporary
+# [patch.crates-io] (charon does not honor hax's `-C` config, so we patch the manifest).
+LEAN_DIR = os.path.normpath(os.path.join(CRATE, "proofs", "aeneas-lean"))
+WS = os.path.normpath(os.path.join(CRATE, ".."))   # workspace root (holds Cargo.toml/lock)
+HAX_LEAN_DIR = os.environ.get("HAX_LEAN_DIR", os.path.expanduser("~/hax"))
+
+# Crypto core to extract, mirroring the ProVerif targets: SD-APKE (message), SD-PKE
+# (metadata), Ed25519 domain-separated signing (sign), and envelope encrypt/decrypt.
+# charon translates each item's transitive closure; aeneas-hostile helpers inside it
+# (the `&'static` domain tags, the trial-decryption loop) carry
+# `#[cfg_attr(hax_backend_lean, hax_lib::opaque)]`. `--charon-args` overrides this.
+LEAN_START_FROM = [
+    "securedrop_protocol_minimal::message",
+    "securedrop_protocol_minimal::metadata",
+    "securedrop_protocol_minimal::sign",
+    "securedrop_protocol_minimal::encrypt_decrypt::encrypt",
+    "securedrop_protocol_minimal::encrypt_decrypt::decrypt",
+    "securedrop_protocol_minimal::encrypt_decrypt::decrypt_with_sender",
+]
 
 HAX_PROVERIF_DIR = os.environ.get(
     "HAX_PROVERIF_DIR", os.path.expanduser("~/hax-proverif-backend")
@@ -146,6 +180,79 @@ def cmd_extract(args):
             print("  " + l)
         if not leaked:
             print("  (clean — only benign string literals remain)")
+    return rc
+
+
+def _inject_hax_lib_patch():
+    """Add a temporary [patch.crates-io] to the workspace manifest pointing hax-lib at
+    HAX_LEAN_DIR, so charon compiles against the dev hax-lib (charon ignores hax's `-C`
+    config, so unlike the ProVerif lane we patch the manifest). Returns {path: original}
+    backups (Cargo.toml + Cargo.lock) for the caller to restore; empty if already patched."""
+    lib = os.path.join(HAX_LEAN_DIR, "hax-lib")
+    entries = (
+        'hax-lib = {{ path = "{0}" }}\n'
+        'hax-lib-macros = {{ path = "{0}/macros" }}\n'
+        'hax-lib-macros-types = {{ path = "{0}/macros/types" }}\n'
+    ).format(lib)
+    ws_toml = os.path.join(WS, "Cargo.toml")
+    ws_lock = os.path.join(WS, "Cargo.lock")
+    backups = {p: open(p).read() for p in (ws_toml, ws_lock) if os.path.exists(p)}
+    text = backups.get(ws_toml, "")
+    if "hax-lib = { path" in text:
+        return {}  # already patched (e.g. re-entrant); leave as-is
+    marker = "[patch.crates-io]\n"
+    text = text.replace(marker, marker + entries, 1) if marker in text \
+        else text + "\n" + marker + entries
+    with open(ws_toml, "w") as f:
+        f.write(text)
+    return backups
+
+
+def cmd_extract_lean(args):
+    """Aeneas/Lean lane: `cargo hax into aeneas-lean` runs charon then aeneas to lift the
+    Rust into a Lean project under ../aeneas-lean/. Extracts the crypto-core closure
+    (LEAN_START_FROM); aeneas-hostile helpers are gated opaque via
+    `#[cfg_attr(hax_backend_lean, hax_lib::opaque)]`. Needs a hax checkout with
+    cryspen/hax#2069 + #2071 (HAX_LEAN_DIR): its cargo-hax is put on PATH and its hax-lib
+    injected as a temporary [patch.crates-io] (Cargo.toml/lock restored afterwards)."""
+    env = dict(os.environ)
+    # Put HAX_LEAN_DIR's cargo-hax on PATH — the most recently built of release/debug,
+    # so a stale build in the other profile can't shadow a fresh one.
+    cands = [os.path.join(HAX_LEAN_DIR, "target", s, "cargo-hax") for s in ("release", "debug")]
+    cands = [c for c in cands if os.path.exists(c)]
+    if cands:
+        newest = max(cands, key=os.path.getmtime)
+        env["PATH"] = os.path.dirname(newest) + os.pathsep + env.get("PATH", "")
+    charon = args.charon_args or " ".join("--start-from " + t for t in LEAN_START_FROM)
+    cmd = ["cargo", "hax", "into", "aeneas-lean"]
+    if not args.no_lakefile:
+        # Idempotent: scaffolds lakefile.toml + lean-toolchain, never overwriting edits.
+        cmd += ["--lakefile"]
+    # `--flag=value` form: values start with `--` (`--start-from ...`), which the
+    # space-separated form would mis-parse as new flags.
+    cmd += ["--charon-args=" + charon]
+    if args.aeneas_args:
+        cmd += ["--aeneas-args=" + args.aeneas_args]
+    backups = _inject_hax_lib_patch()
+    try:
+        rc = subprocess.run(cmd, cwd=CRATE, env=env).returncode
+    finally:
+        for p, data in backups.items():
+            with open(p, "w") as f:
+                f.write(data)
+    # Report the .lean files aeneas produced (nested under a Lean-package dir).
+    leans = sorted(
+        os.path.relpath(os.path.join(root, f), LEAN_DIR)
+        for root, _dirs, files in os.walk(LEAN_DIR)
+        for f in files if f.endswith(".lean")
+    )
+    where = os.path.relpath(LEAN_DIR, HERE)
+    if leans:
+        print("\n== aeneas-lean: {} .lean file(s) under {} ==".format(len(leans), where))
+        for f in leans:
+            print("  " + f)
+    else:
+        print("\n== aeneas-lean: no .lean produced under {} (see errors above) ==".format(where))
     return rc
 
 
@@ -331,6 +438,15 @@ def main():
     e = sub.add_parser("extract-proverif", help="cargo hax into proverif -> extraction/lib.pvl")
     e.add_argument("--include", help="override the -i target filter")
     e.set_defaults(func=cmd_extract)
+
+    ln = sub.add_parser("extract-lean",
+                        help="cargo hax into aeneas-lean -> Lean project under ../aeneas-lean/")
+    ln.add_argument("--no-lakefile", action="store_true",
+                    help="don't scaffold lakefile.toml / lean-toolchain in ../aeneas-lean/")
+    ln.add_argument("--charon-args",
+                    help="override the default crypto-core --start-from set (shell-quoted)")
+    ln.add_argument("--aeneas-args", help="extra args forwarded to aeneas (shell-quoted)")
+    ln.set_defaults(func=cmd_extract_lean)
 
     r = sub.add_parser("reconstruct-proverif",
                        help="engine-free: verify the committed lib.pvl snapshot digest")

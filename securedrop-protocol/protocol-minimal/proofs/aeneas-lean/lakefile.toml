@@ -1,0 +1,17 @@
+name = "SecuredropProtocolMinimal"
+version = "0.1.0"
+defaultTargets = ["SecuredropProtocolMinimal"]
+
+[[lean_lib]]
+name = "SecuredropProtocolMinimal"
+
+[[require]]
+name = "aeneas"
+git = "https://github.com/cryspen/aeneas"
+rev = "e0a1596"
+subDir = "backends/lean"
+
+[[require]]
+name = "Hax"
+git = { url = "https://github.com/cryspen/hax-lean" }
+rev = "v0.1.0"

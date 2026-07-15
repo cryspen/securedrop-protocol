@@ -58,21 +58,28 @@ mod sealed_impls {
 }
 
 impl DomainTag for JournalistLongTermKey {
+    // aeneas/charon can't represent the `&'static [u8]` promoted literal ("no bottoms
+    // in the value"); the tag is a constant, so make it opaque for the Lean backend
+    // only. F* and normal builds are unaffected. See AeneasVerif/aeneas#392.
+    #[cfg_attr(hax_backend_lean, hax_lib::opaque)]
     fn tag() -> &'static [u8] {
         b"j-sig-ltk"
     }
 }
 impl DomainTag for JournalistEphemeralKey {
+    #[cfg_attr(hax_backend_lean, hax_lib::opaque)]
     fn tag() -> &'static [u8] {
         b"j-sig-eph"
     }
 }
 impl DomainTag for NewsroomOnJournalist {
+    #[cfg_attr(hax_backend_lean, hax_lib::opaque)]
     fn tag() -> &'static [u8] {
         b"nr-sig"
     }
 }
 impl DomainTag for FpfOnNewsroom {
+    #[cfg_attr(hax_backend_lean, hax_lib::opaque)]
     fn tag() -> &'static [u8] {
         b"fpf-sig-nr"
     }
@@ -154,6 +161,9 @@ impl<'de, D: DomainTag> serde::Deserialize<'de> for Signature<D> {
 
 /// Construct the tagged signing preimage: `len(tag) || tag || msg`.
 #[cfg_attr(hax, hax_lib::fstar::verification_status(lax))]
+// Builds the preimage from the opaque `&'static` domain tag with `Vec` ops aeneas
+// can't translate; it's domain-separation plumbing, so make it opaque for Lean only.
+#[cfg_attr(hax_backend_lean, hax_lib::opaque)]
 fn tagged_preimage<D: DomainTag>(msg: &[u8]) -> Vec<u8> {
     let tag = D::tag();
     #[cfg(not(hax))]
