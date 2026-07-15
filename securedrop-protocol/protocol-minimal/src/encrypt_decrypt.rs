@@ -78,6 +78,11 @@ pub fn decrypt<U: UserSecret + ?Sized>(receiver: &U, envelope: &Envelope) -> Pla
 /// Decrypt like [`decrypt`], additionally returning the sender's long-term
 /// SD-APKE public key `pk_S^APKE` recovered from `ct^PKE`.
 #[cfg_attr(hax, hax_lib::fstar::verification_status(lax))]
+// The trial-decryption loop iterates a `Vec<&MessageKeyBundle>`, which aeneas/charon
+// can't translate (iterator + nested borrows, AeneasVerif/aeneas#464). This is
+// protocol dispatch rather than a crypto primitive, so make it opaque for the Lean
+// backend only; F* and normal builds are unaffected.
+#[cfg_attr(hax_backend_lean, hax_lib::opaque)]
 pub fn decrypt_with_sender<U: UserSecret + ?Sized>(
     receiver: &U,
     envelope: &Envelope,
